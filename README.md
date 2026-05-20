@@ -52,133 +52,148 @@
 
 ## 🚀 Tutorial Instalasi Lengkap (Step by Step)
 
+> 💡 **Semua perintah dijalankan sebagai `root` atau gunakan `sudo`**
+
+---
+
 ### STEP 1 — Update & Upgrade VPS
 
-Pertama, pastikan VPS kamu up-to-date:
-
 ```bash
-sudo apt update && sudo apt upgrade -y
+apt update && apt upgrade -y
 ```
 
 ---
 
-### STEP 2 — Install Node.js v18+
+### STEP 2 — Install Kebutuhan Dasar
 
 ```bash
-# Install curl dulu kalau belum ada
-sudo apt install -y curl
+apt install -y curl git nano
+```
 
-# Tambah repo NodeSource (Node.js 18)
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-
-# Install Node.js
-sudo apt install -y nodejs
-
-# Verifikasi instalasi
-node -v    # Harus tampil: v18.x.x
-npm -v     # Harus tampil: v8.x.x atau lebih
+Verifikasi:
+```bash
+git --version   # Harus tampil: git version 2.x.x
+curl --version  # Harus tampil: curl 7.x.x
 ```
 
 ---
 
-### STEP 3 — Install Git
+### STEP 3 — Install Node.js v18
+
+> ⚠️ Jangan pakai `apt install nodejs` langsung — versinya terlalu lama!
+> Gunakan NodeSource agar dapat Node.js v18.
 
 ```bash
-sudo apt install -y git
-
-# Verifikasi
-git --version
+curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
+apt install -y nodejs
 ```
+
+Verifikasi — **WAJIB muncul v18+**:
+```bash
+node -v   # Harus: v18.x.x
+npm -v    # Harus: v8.x.x atau lebih
+```
+
+> ❌ Kalau masih muncul versi lama (v10/v12), jalankan ini dulu:
+> ```bash
+> apt remove -y nodejs
+> apt autoremove -y
+> curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
+> apt install -y nodejs
+> ```
 
 ---
 
-### STEP 4 — Install PM2 (Process Manager)
+### STEP 4 — Install PM2
 
-PM2 digunakan agar bot tetap berjalan meskipun terminal ditutup.
+PM2 adalah process manager agar bot tetap hidup meski terminal ditutup.
 
 ```bash
-sudo npm install -g pm2
-
-# Verifikasi
-pm2 -v
+npm install -g pm2
 ```
+
+Verifikasi:
+```bash
+pm2 -v   # Harus tampil nomor versi PM2
+```
+
+> ❌ **Error `pm2: command not found`?** Jalankan:
+> ```bash
+> npm install -g pm2 --force
+> # Atau jika masih gagal:
+> npx pm2 -v
+> ```
 
 ---
 
-### STEP 5 — Clone Repository
+### STEP 5 — Clone Repository Bot
 
 ```bash
-# Pindah ke folder home
 cd ~
-
-# Clone repo bot
 git clone https://github.com/Rayzell25/Bot-2fa.git
-
-# Masuk ke folder bot
 cd Bot-2fa
 ```
 
 ---
 
-### STEP 6 — Install Dependencies
+### STEP 6 — Install Dependencies Bot
 
 ```bash
 npm install
 ```
 
-> ⏳ Tunggu hingga semua package selesai terinstall. Biasanya 1-2 menit.
+> ⏳ Tunggu hingga selesai (1-2 menit). Pastikan tidak ada error merah.
+> Pesan kuning `npm warn` itu normal, abaikan saja.
 
 ---
 
-### STEP 7 — Konfigurasi Bot
+### STEP 7 — Konfigurasi File .env
 
 ```bash
-# Copy file env
 cp .env.example .env
-
-# Edit file .env
 nano .env
 ```
 
-Isi file `.env` seperti ini:
+Isi semua variabel lalu simpan (**CTRL+X → Y → Enter**):
 
 ```env
-BOT_TOKEN=isi_token_bot_kamu_disini
-OWNER_ID=isi_telegram_id_kamu
+BOT_TOKEN=token_dari_botfather
+OWNER_ID=telegram_id_kamu
 BOT_USERNAME=username_bot_tanpa_@
 CHANNEL=@NamaChannel
 ```
 
 > 💡 **Cara dapat nilai di atas:**
-> - `BOT_TOKEN` → Buat bot baru di [@BotFather](https://t.me/BotFather), ketik `/newbot`
-> - `OWNER_ID` → Cek ID kamu di [@userinfobot](https://t.me/userinfobot)
-> - `BOT_USERNAME` → Username bot yang kamu buat di BotFather (tanpa @)
-> - `CHANNEL` → Username channel kamu (format: `@namachannel`)
-
-Setelah edit, simpan dengan: **CTRL+X → Y → Enter**
+> | Variabel | Cara Dapat |
+> |----------|-----------|
+> | `BOT_TOKEN` | Chat [@BotFather](https://t.me/BotFather) → `/newbot` |
+> | `OWNER_ID` | Chat [@userinfobot](https://t.me/userinfobot) |
+> | `BOT_USERNAME` | Username bot dari BotFather (tanpa `@`) |
+> | `CHANNEL` | Username channel kamu (format: `@namachannel`) |
 
 ---
 
-### STEP 8 — Tambahkan Bot sebagai Admin Channel
+### STEP 8 — Jadikan Bot sebagai Admin Channel
 
-> ⚠️ **WAJIB!** Bot harus jadi admin di channel kamu agar bisa cek member.
+> ⚠️ **WAJIB!** Bot harus jadi admin di channel agar fitur force-join berfungsi.
 
-1. Buka channel kamu di Telegram
+1. Buka channel Telegram kamu
 2. Klik nama channel → **Edit → Administrators**
-3. Klik **Add Administrator**
-4. Cari username bot kamu
-5. Aktifkan permission: **Add Members** (minimal)
-6. Klik **Save**
+3. Klik **Add Administrator** → Cari username bot
+4. Aktifkan permission minimal: ✅ **Add Members**
+5. Klik **Save**
 
 ---
 
-### STEP 9 — Jalankan Bot
+### STEP 9 — Test Jalankan Bot
 
-#### Cara 1: Test dulu (tanpa PM2)
+Jalankan dulu tanpa PM2 untuk memastikan tidak ada error:
+
 ```bash
 node bot.js
 ```
-Kalau muncul output seperti ini, berarti bot berhasil jalan:
+
+✅ **Sukses** kalau muncul:
 ```
 ╔══════════════════════════════════╗
 ║  🔐  2FA SECRET BOT  STARTED  🔐  ║
@@ -189,32 +204,38 @@ Kalau muncul output seperti ini, berarti bot berhasil jalan:
 📢  Channel: @RayzellStores
 🚀  Bot is running...
 ```
-Stop dengan **CTRL+C**, lalu lanjut ke cara 2.
 
-#### Cara 2: Jalankan dengan PM2 (Recommended)
+Tekan **CTRL+C** untuk stop, lalu lanjut ke STEP 10.
+
+---
+
+### STEP 10 — Jalankan Bot dengan PM2 (Permanent)
+
 ```bash
 # Start bot
 pm2 start bot.js --name "2fa-bot"
 
-# Lihat status
+# Aktifkan auto-start saat VPS reboot
+pm2 startup
+# ⚠️ Salin & jalankan perintah yang muncul dari pm2 startup!
+
+# Simpan konfigurasi PM2
+pm2 save
+
+# Cek status
 pm2 status
 
-# Lihat log real-time
+# Lihat log
 pm2 logs 2fa-bot
-
-# Auto-start setelah VPS reboot
-pm2 startup
-pm2 save
 ```
 
 ---
 
-### STEP 10 — Verifikasi Bot Berjalan
+### STEP 11 — Verifikasi Bot Berjalan
 
-1. Buka Telegram
-2. Cari username bot kamu
-3. Ketik `/start`
-4. Kalau muncul pesan selamat datang → **✅ Bot berhasil!**
+1. Buka Telegram → cari username bot kamu
+2. Ketik `/start`
+3. Kalau muncul pesan selamat datang → **🎉 Bot 100% berhasil!**
 
 ---
 
@@ -249,38 +270,66 @@ pm2 monit               # Monitor real-time
 
 ## ❗ Troubleshooting
 
-### Bot tidak merespon?
+### ❌ `pm2: command not found`
+PM2 belum terinstall. Jalankan:
 ```bash
-# Cek apakah bot jalan
-pm2 status
-
-# Cek log error
-pm2 logs 2fa-bot --lines 50
+npm install -g pm2
+pm2 -v
 ```
 
-### Error: Cannot find module?
+### ❌ `node: command not found` atau versi Node.js lama
+```bash
+# Hapus nodejs lama
+apt remove -y nodejs
+apt autoremove -y
+
+# Install Node.js 18 dari NodeSource
+curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
+apt install -y nodejs
+
+# Verifikasi
+node -v   # Harus v18.x.x
+npm -v
+```
+
+### ❌ `npm install -g pm2` error permission
+```bash
+# Coba tanpa sudo (kalau login sebagai root)
+npm install -g pm2 --force
+```
+
+### ❌ Bot tidak merespon setelah start
+```bash
+pm2 status           # Cek status (harus "online")
+pm2 logs 2fa-bot     # Cek log error
+```
+
+### ❌ `Error: Cannot find module`
 ```bash
 cd ~/Bot-2fa
 npm install
 pm2 restart 2fa-bot
 ```
 
-### Error: Unauthorized (401)?
-- Pastikan `BOT_TOKEN` di `.env` sudah benar
-- Cek apakah token masih aktif di @BotFather
+### ❌ `Error: Unauthorized` (401)
+- Token bot salah atau expired
+- Buat token baru di [@BotFather](https://t.me/BotFather) → `/mybot` → API Token
+- Update `.env` lalu: `pm2 restart 2fa-bot`
 
-### Bot tidak bisa cek member channel?
-- Pastikan bot sudah jadi **admin** di channel
-- Pastikan `CHANNEL` di `.env` diisi dengan format `@namachannel`
+### ❌ Bot tidak bisa cek member channel
+- Bot belum jadi admin di channel → lihat STEP 8
+- Pastikan format CHANNEL di `.env`: `@namachannel` (dengan `@`)
 
-### Node.js version terlalu lama?
+### ❌ `npm warn` saat install dependencies
+- Pesan kuning `warn` itu **normal**, abaikan
+- Yang perlu diperhatikan hanya pesan merah `error`
+
+### ❌ Bot mati setelah terminal ditutup
 ```bash
-# Cek versi
-node -v
-
-# Kalau kurang dari v18, install ulang:
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-sudo apt install -y nodejs
+# Pastikan sudah jalankan pm2 startup
+pm2 startup
+# Salin & jalankan perintah yang muncul
+pm2 save
 ```
 
 ---
