@@ -225,6 +225,7 @@ bot.on('callback_query', async (query) => {
   const chatId = query.message.chat.id;
   const msgId  = query.message.message_id;
   const name   = query.from.first_name || 'there';
+  const data   = query.data || '';
 
   if (query.data === 'check_join') {
     const joined = await hasJoined(userId);
