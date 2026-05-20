@@ -20,7 +20,6 @@ const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 /** Validate & normalise a Base32 2FA secret */
 function isValid2FASecret(input) {
   const cleaned = input.trim().toUpperCase().replace(/\s+/g, '');
-  // Base32 alphabet only, length must be multiple of 8 (common: 16, 32)
   const base32Regex = /^[A-Z2-7]+=*$/;
   return base32Regex.test(cleaned) && cleaned.length >= 16;
 }
@@ -28,14 +27,7 @@ function isValid2FASecret(input) {
 /** Generate a fresh TOTP secret + current OTP */
 function generateSecret(label = 'MyAccount', issuer = 'RayzellStores') {
   const secret = new Secret({ size: 20 });
-  const totp = new TOTP({
-    issuer,
-    label,
-    algorithm: 'SHA1',
-    digits: 6,
-    period: 30,
-    secret,
-  });
+  const totp = new TOTP({ issuer, label, algorithm: 'SHA1', digits: 6, period: 30, secret });
   return {
     base32 : secret.base32,
     otpauth: totp.toString(),
@@ -56,30 +48,40 @@ function getOTP(base32) {
   return totp.generate();
 }
 
-/** Check if user has joined the required channel */
+/**
+ * Cek apakah user sudah join channel.
+ * - 'member' / 'administrator' / 'creator' → sudah join ✅
+ * - 'left' / 'kicked'                      → belum/tidak join ❌
+ * - Error API (mis. bot bukan admin)        → anggap SUDAH join ✅
+ *   supaya user yang udah join tidak kena block karena masalah permission bot.
+ */
 async function hasJoined(userId) {
   try {
     const member = await bot.getChatMember(CHANNEL, userId);
-    return ['member', 'administrator', 'creator'].includes(member.status);
-  } catch {
-    return false;
+    // kicked = banned, left = keluar sendiri
+    if (member.status === 'kicked' || member.status === 'left') return false;
+    return true;
+  } catch (err) {
+    // Kalau bot bukan admin channel atau channel tidak ditemukan,
+    // jangan blokir user — log error saja lalu loloskan.
+    console.error('⚠️  hasJoined error (bot mungkin bukan admin channel):', err.message);
+    return true;
   }
 }
-
 
 // ─────────────────────────────────────────
 //   KEYBOARD BUILDERS
 // ─────────────────────────────────────────
 
-const mainMenu = {
+const mainMenuOpts = {
   reply_markup: {
     keyboard: [
       ['🔐 Generate 2FA Secret', '🔍 Cek 2FA Secret'],
       ['⏱️ Get OTP Code',        '📋 Cara Pakai'],
       ['👑 Owner',               '📢 Channel'],
     ],
-    resize_keyboard: true,
-    one_time_keyboard: false,
+    resize_keyboard    : true,
+    one_time_keyboard  : false,
   },
   parse_mode: 'HTML',
 };
@@ -97,12 +99,11 @@ function joinButton() {
 }
 
 // ─────────────────────────────────────────
-//   FORCE JOIN MIDDLEWARE
+//   FORCE JOIN CHECK (helper)
 // ─────────────────────────────────────────
 
-async function requireJoin(msg, next) {
-  const userId = msg.from.id;
-  const joined = await hasJoined(userId);
+async function requireJoin(msg) {
+  const joined = await hasJoined(msg.from.id);
   if (!joined) {
     await bot.sendMessage(msg.chat.id,
       `╔══════════════════════╗\n` +
@@ -120,16 +121,15 @@ async function requireJoin(msg, next) {
   return true;
 }
 
-
 // ─────────────────────────────────────────
 //   /start COMMAND
 // ─────────────────────────────────────────
 
 bot.onText(/\/start/, async (msg) => {
-  const userId   = msg.from.id;
-  const name     = msg.from.first_name || 'User';
-  const joined   = await hasJoined(userId);
+  const name   = msg.from.first_name || 'User';
+  const joined = await hasJoined(msg.from.id);
 
+  // Belum join → minta join dulu
   if (!joined) {
     return bot.sendMessage(msg.chat.id,
       `╔══════════════════════╗\n` +
@@ -144,7 +144,8 @@ bot.onText(/\/start/, async (msg) => {
     );
   }
 
-  await bot.sendMessage(msg.chat.id,
+  // Sudah join → langsung tampil menu utama
+  return bot.sendMessage(msg.chat.id,
     `╔═══════════════════════════╗\n` +
     `║  🔐 <b>2FA SECRET BOT</b>  ║\n` +
     `║    by @RayzellStores       ║\n` +
@@ -157,13 +158,12 @@ bot.onText(/\/start/, async (msg) => {
     `└ 📱 Generate QR Code\n\n` +
     `💡 Pilih menu di bawah untuk mulai!\n\n` +
     `⚡ <i>Powered by RayzellStores</i>`,
-    mainMenu
+    mainMenuOpts
   );
 });
 
-
 // ─────────────────────────────────────────
-//   CALLBACK QUERY — check_join
+//   CALLBACK QUERY  (SATU listener saja!)
 // ─────────────────────────────────────────
 
 bot.on('callback_query', async (query) => {
@@ -171,60 +171,102 @@ bot.on('callback_query', async (query) => {
   const chatId = query.message.chat.id;
   const msgId  = query.message.message_id;
   const name   = query.from.first_name || 'User';
+  const data   = query.data || '';
 
-  if (query.data === 'check_join') {
+  // ── check_join ──
+  if (data === 'check_join') {
     const joined = await hasJoined(userId);
     if (!joined) {
       return bot.answerCallbackQuery(query.id, {
-        text: '❌ Kamu belum join! Join dulu ya.',
+        text      : '❌ Kamu belum join! Coba join dulu ya.',
         show_alert: true,
       });
     }
 
     await bot.answerCallbackQuery(query.id, {
-      text: '✅ Verifikasi berhasil! Selamat datang!',
+      text      : '✅ Verifikasi berhasil! Selamat datang!',
       show_alert: true,
     });
 
-    await bot.editMessageText(
-      `✅ <b>Verifikasi Berhasil!</b>\n\nHalo <b>${name}</b>, kamu sudah bergabung!\nSekarang bisa gunakan bot ini. 🎉`,
-      { chat_id: chatId, message_id: msgId, parse_mode: 'HTML' }
-    );
+    try {
+      await bot.editMessageText(
+        `✅ <b>Verifikasi Berhasil!</b>\n\nHalo <b>${name}</b>, kamu sudah bergabung!\nSekarang bisa gunakan bot ini. 🎉`,
+        { chat_id: chatId, message_id: msgId, parse_mode: 'HTML' }
+      );
+    } catch (_) { /* pesan mungkin sudah diedit, abaikan */ }
 
     return bot.sendMessage(chatId,
       `╔═══════════════════════════╗\n` +
       `║  🔐 <b>2FA SECRET BOT</b>  ║\n` +
       `║    by @RayzellStores       ║\n` +
       `╚═══════════════════════════╝\n\n` +
+      `👋 Halo <b>${name}</b>! Bot siap digunakan.\n\n` +
       `✨ Pilih menu di bawah untuk mulai!\n\n` +
       `⚡ <i>Powered by RayzellStores</i>`,
-      mainMenu
+      mainMenuOpts
     );
   }
 
-  // Generate QR callback
-  if (query.data && query.data.startsWith('qr_')) {
-    const secret = query.data.replace('qr_', '');
+  // ── gen_new ──
+  if (data === 'gen_new') {
+    await bot.answerCallbackQuery(query.id);
+    const { base32, otp } = generateSecret('MyAccount', 'RayzellStores');
+    const now = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
+    return bot.sendMessage(chatId,
+      `╔══════════════════════════╗\n` +
+      `║  ✅ <b>2FA SECRET GENERATED!</b>  ║\n` +
+      `╚══════════════════════════╝\n\n` +
+      `🔑 <b>Secret Key:</b>\n<code>${base32}</code>\n\n` +
+      `⏱️ <b>OTP Sekarang:</b>\n<code>${otp}</code>\n\n` +
+      `📋 <b>Info:</b>\n` +
+      `├ Algorithm : SHA1\n` +
+      `├ Digits    : 6\n` +
+      `├ Period    : 30 detik\n` +
+      `└ Type      : TOTP\n\n` +
+      `🕐 <i>Generate: ${now} WIB</i>\n\n` +
+      `⚡ <i>@RayzellStores</i>`,
+      {
+        parse_mode   : 'HTML',
+        reply_markup : {
+          inline_keyboard: [[
+            { text: '🔄 Generate Lagi', callback_data: 'gen_new' },
+            { text: '📱 QR Code',       callback_data: `qr_${base32}` },
+          ]],
+        },
+      }
+    );
+  }
+
+  // ── qr_<secret> ──
+  if (data.startsWith('qr_')) {
+    const secret = data.replace('qr_', '');
     await bot.answerCallbackQuery(query.id);
     try {
-      const { otpauth } = generateSecret('MyAccount', 'RayzellStores');
-      const qrBuffer = await QRCode.toBuffer(otpauth, { width: 300, margin: 2 });
-      await bot.sendPhoto(chatId, qrBuffer, {
-        caption: `📱 <b>QR Code untuk Google Authenticator</b>\n\n🔑 Secret: <code>${secret}</code>\n\n📌 Scan QR ini dengan app authenticator kamu!`,
+      const totp = new TOTP({
+        issuer   : 'RayzellStores',
+        label    : 'MyAccount',
+        algorithm: 'SHA1',
+        digits   : 6,
+        period   : 30,
+        secret   : Secret.fromBase32(secret),
+      });
+      const qrBuffer = await QRCode.toBuffer(totp.toString(), { width: 300, margin: 2 });
+      return bot.sendPhoto(chatId, qrBuffer, {
+        caption   : `📱 <b>QR Code untuk Google Authenticator</b>\n\n🔑 Secret: <code>${secret}</code>\n\n📌 Scan QR ini dengan app authenticator kamu!`,
         parse_mode: 'HTML',
       });
     } catch (e) {
-      bot.sendMessage(chatId, '❌ Gagal generate QR Code.', { parse_mode: 'HTML' });
+      return bot.sendMessage(chatId, '❌ Gagal generate QR Code.', { parse_mode: 'HTML' });
     }
   }
-});
 
+  await bot.answerCallbackQuery(query.id);
+});
 
 // ─────────────────────────────────────────
 //   TEXT MESSAGE HANDLER
 // ─────────────────────────────────────────
 
-// State sederhana untuk menunggu input
 const userState = {};
 
 bot.on('message', async (msg) => {
@@ -233,11 +275,10 @@ bot.on('message', async (msg) => {
   const userId = msg.from.id;
   const text   = msg.text.trim();
 
-  // Skip commands (sudah ada handler sendiri)
-  if (text.startsWith('/')) return;
+  if (text.startsWith('/')) return; // ditangani onText
 
-  // ── Force Join Check ──
-  const ok = await requireJoin(msg, null);
+  // Force join check
+  const ok = await requireJoin(msg);
   if (!ok) return;
 
   // ── MENU: Generate 2FA Secret ──
@@ -248,10 +289,8 @@ bot.on('message', async (msg) => {
       `╔══════════════════════════╗\n` +
       `║  ✅ <b>2FA SECRET GENERATED!</b>  ║\n` +
       `╚══════════════════════════╝\n\n` +
-      `🔑 <b>Secret Key:</b>\n` +
-      `<code>${base32}</code>\n\n` +
-      `⏱️ <b>OTP Sekarang:</b>\n` +
-      `<code>${otp}</code>\n\n` +
+      `🔑 <b>Secret Key:</b>\n<code>${base32}</code>\n\n` +
+      `⏱️ <b>OTP Sekarang:</b>\n<code>${otp}</code>\n\n` +
       `📋 <b>Info:</b>\n` +
       `├ Algorithm : SHA1\n` +
       `├ Digits    : 6\n` +
@@ -261,11 +300,11 @@ bot.on('message', async (msg) => {
       `💡 Copy secret key di atas lalu masukkan ke Google Authenticator / Authy!\n\n` +
       `⚡ <i>@RayzellStores</i>`,
       {
-        parse_mode: 'HTML',
+        parse_mode  : 'HTML',
         reply_markup: {
           inline_keyboard: [[
             { text: '🔄 Generate Lagi', callback_data: 'gen_new' },
-            { text: '📱 QR Code', callback_data: `qr_${base32}` },
+            { text: '📱 QR Code',       callback_data: `qr_${base32}` },
           ]],
         },
       }
@@ -278,8 +317,7 @@ bot.on('message', async (msg) => {
     return bot.sendMessage(chatId,
       `🔍 <b>Validasi 2FA Secret</b>\n\n` +
       `📝 Kirim 2FA Secret kamu sekarang.\n\n` +
-      `📌 <i>Contoh format:</i>\n` +
-      `<code>JBSWY3DPEHPK3PXP</code>\n\n` +
+      `📌 <i>Contoh format:</i>\n<code>JBSWY3DPEHPK3PXP</code>\n\n` +
       `⚠️ Hanya Base32 yang valid akan diproses.`,
       { parse_mode: 'HTML', reply_markup: { force_reply: true } }
     );
@@ -291,12 +329,10 @@ bot.on('message', async (msg) => {
     return bot.sendMessage(chatId,
       `⏱️ <b>Get OTP Code</b>\n\n` +
       `📝 Kirim 2FA Secret kamu untuk mendapatkan OTP real-time.\n\n` +
-      `📌 <i>Contoh:</i>\n` +
-      `<code>JBSWY3DPEHPK3PXP</code>`,
+      `📌 <i>Contoh:</i>\n<code>JBSWY3DPEHPK3PXP</code>`,
       { parse_mode: 'HTML', reply_markup: { force_reply: true } }
     );
   }
-
 
   // ── MENU: Cara Pakai ──
   if (text === '📋 Cara Pakai') {
@@ -344,7 +380,7 @@ bot.on('message', async (msg) => {
       `🔗 <a href="https://t.me/RayzellStores">t.me/RayzellStores</a>\n\n` +
       `📌 Join untuk info update terbaru!`,
       {
-        parse_mode: 'HTML',
+        parse_mode  : 'HTML',
         reply_markup: {
           inline_keyboard: [[
             { text: '📢 Buka Channel', url: 'https://t.me/RayzellStores' },
@@ -363,11 +399,11 @@ bot.on('message', async (msg) => {
         `╔══════════════════════╗\n` +
         `║  ❌ <b>INVALID SECRET!</b>  ║\n` +
         `╚══════════════════════╝\n\n` +
-        `⛔ <b>Error:</b> This is not a 2FA Secret!\n\n` +
+        `⛔ <b>Error: This is not a 2FA Secret!</b>\n\n` +
         `📌 Secret yang valid:\n` +
-        `├ Format: Base32 (A-Z, 2-7)\n` +
-        `├ Panjang: minimal 16 karakter\n` +
-        `└ Contoh: <code>JBSWY3DPEHPK3PXP</code>\n\n` +
+        `├ Format : Base32 (huruf A-Z dan angka 2-7)\n` +
+        `├ Panjang : minimal 16 karakter\n` +
+        `└ Contoh : <code>JBSWY3DPEHPK3PXP</code>\n\n` +
         `🔄 Coba lagi dengan secret yang benar.`,
         { parse_mode: 'HTML' }
       );
@@ -394,7 +430,7 @@ bot.on('message', async (msg) => {
         `╔══════════════════════╗\n` +
         `║  ❌ <b>INVALID SECRET!</b>  ║\n` +
         `╚══════════════════════╝\n\n` +
-        `⛔ <b>Error:</b> This is not a 2FA Secret!\n\n` +
+        `⛔ <b>Error: This is not a 2FA Secret!</b>\n\n` +
         `📌 Pastikan kamu mengirim secret yang benar\n` +
         `(bukan kode OTP atau password biasa).`,
         { parse_mode: 'HTML' }
@@ -407,8 +443,7 @@ bot.on('message', async (msg) => {
       `║  ⏱️ <b>OTP REAL-TIME</b>  ║\n` +
       `╚═══════════════════════╝\n\n` +
       `🔑 <b>Secret:</b>\n<code>${input}</code>\n\n` +
-      `🔢 <b>Kode OTP:</b>\n` +
-      `<code>${otp}</code>\n\n` +
+      `🔢 <b>Kode OTP:</b>\n<code>${otp}</code>\n\n` +
       `⏰ Kode berlaku <b>30 detik</b>\n` +
       `🕐 <i>${now} WIB</i>\n\n` +
       `⚡ <i>@RayzellStores</i>`,
@@ -416,71 +451,30 @@ bot.on('message', async (msg) => {
     );
   }
 
-  // ── INPUT LANGSUNG (tanpa menu) ──
-  // User kirim teks random — cek apakah itu secret
-  if (text.length >= 16 && /^[A-Z2-7]+=*$/i.test(text.replace(/\s+/g, ''))) {
-    const input = text.toUpperCase().replace(/\s+/g, '');
-    if (isValid2FASecret(input)) {
-      const otp = getOTP(input);
-      const now = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
-      return bot.sendMessage(chatId,
-        `╔════════════════════════╗\n` +
-        `║  ✅ <b>SECRET TERDETEKSI!</b>  ║\n` +
-        `╚════════════════════════╝\n\n` +
-        `🔑 <b>Secret:</b>\n<code>${input}</code>\n\n` +
-        `⏱️ <b>OTP Sekarang:</b>\n<code>${otp}</code>\n\n` +
-        `🕐 <i>${now} WIB</i>\n\n` +
-        `⚡ <i>@RayzellStores</i>`,
-        { parse_mode: 'HTML' }
-      );
-    }
+  // ── INPUT LANGSUNG — auto-detect secret ──
+  const raw = text.toUpperCase().replace(/\s+/g, '');
+  if (raw.length >= 16 && isValid2FASecret(raw)) {
+    const otp = getOTP(raw);
+    const now = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
+    return bot.sendMessage(chatId,
+      `╔════════════════════════╗\n` +
+      `║  ✅ <b>SECRET TERDETEKSI!</b>  ║\n` +
+      `╚════════════════════════╝\n\n` +
+      `🔑 <b>Secret:</b>\n<code>${raw}</code>\n\n` +
+      `⏱️ <b>OTP Sekarang:</b>\n<code>${otp}</code>\n\n` +
+      `🕐 <i>${now} WIB</i>\n\n` +
+      `⚡ <i>@RayzellStores</i>`,
+      { parse_mode: 'HTML' }
+    );
   }
 
-  // ── Teks tidak dikenal ──
+  // ── Tidak dikenal ──
   return bot.sendMessage(chatId,
     `❓ <b>Perintah tidak dikenal.</b>\n\n` +
-    `Gunakan menu di bawah atau ketik secret 2FA kamu langsung.\n\n` +
-    `⛔ <b>Error:</b> This is not a 2FA Secret!\n\n` +
+    `Gunakan menu di bawah atau kirim secret 2FA kamu langsung.\n\n` +
+    `⛔ <b>Error: This is not a 2FA Secret!</b>\n\n` +
     `💡 Ketik /start untuk kembali ke menu utama.`,
     { parse_mode: 'HTML' }
-  );
-});
-
-
-// ─────────────────────────────────────────
-//   CALLBACK: Generate New
-// ─────────────────────────────────────────
-
-bot.on('callback_query', async (query) => {
-  if (query.data !== 'gen_new') return;
-  const chatId = query.message.chat.id;
-  await bot.answerCallbackQuery(query.id);
-  const { base32, otp } = generateSecret('MyAccount', 'RayzellStores');
-  const now = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
-  return bot.sendMessage(chatId,
-    `╔══════════════════════════╗\n` +
-    `║  ✅ <b>2FA SECRET GENERATED!</b>  ║\n` +
-    `╚══════════════════════════╝\n\n` +
-    `🔑 <b>Secret Key:</b>\n` +
-    `<code>${base32}</code>\n\n` +
-    `⏱️ <b>OTP Sekarang:</b>\n` +
-    `<code>${otp}</code>\n\n` +
-    `📋 <b>Info:</b>\n` +
-    `├ Algorithm : SHA1\n` +
-    `├ Digits    : 6\n` +
-    `├ Period    : 30 detik\n` +
-    `└ Type      : TOTP\n\n` +
-    `🕐 <i>Generate: ${now} WIB</i>\n\n` +
-    `⚡ <i>@RayzellStores</i>`,
-    {
-      parse_mode: 'HTML',
-      reply_markup: {
-        inline_keyboard: [[
-          { text: '🔄 Generate Lagi', callback_data: 'gen_new' },
-          { text: '📱 QR Code', callback_data: `qr_${base32}` },
-        ]],
-      },
-    }
   );
 });
 
