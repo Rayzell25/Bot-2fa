@@ -1,8 +1,8 @@
 <div align="center">
 
-# 🔐 Telegram 2FA Secret Bot
+# 🔐 Telegram 2FA + Address Bot
 
-### Bot Telegram untuk generate & cek 2FA Secret secara real-time
+### Bot Telegram untuk generate 2FA Secret & Alamat Indonesia secara real-time
 
 [![Node.js](https://img.shields.io/badge/Node.js-18%2B-brightgreen?style=for-the-badge&logo=node.js)](https://nodejs.org)
 [![Telegram](https://img.shields.io/badge/Telegram-Bot-blue?style=for-the-badge&logo=telegram)](https://t.me/RayzellStores)
@@ -16,42 +16,74 @@
 
 ## ✨ Fitur
 
-- 🔒 **Force Join Channel** — user wajib join channel sebelum bisa pakai bot
-- 🔐 **Live OTP** — kode OTP real-time dengan countdown langsung di tombol
-- 🔄 **Tombol Refresh** — muncul otomatis saat OTP expired, klik untuk dapat kode baru
-- ⛔ **Validasi Secret** — kirim bukan Base32? langsung balas `Error: This is not 2FA Secret !`
-- ⚡ **Respon cepat** — polling interval 300ms
+| Fitur | Keterangan |
+|-------|-----------|
+| 🔒 **Force Join Channel** | User wajib join sebelum bisa pakai bot |
+| 🔐 **Generate 2FA** | OTP real-time dengan countdown & tombol Refresh |
+| 📍 **Generate Alamat** | Alamat Indonesia random (10 kota real), pilih 1–10 |
+| ✏️ **1 Pesan Saja** | Semua menu di-edit dalam 1 chat, tidak buat pesan baru |
+| ← **Tombol Back** | Navigasi balik ke menu utama dari mana saja |
+| ⚡ **Anti Delay** | Respon cepat, polling 300ms |
 
 ---
 
 ## 📱 Cara Kerja Bot
 
-1. `/start` → kalau belum join channel, disuruh join dulu
-2. Kalau sudah join → bot balas: `Hello, please enter your 2FA Secret.`
-3. Kirim secret key → bot balas OTP dengan countdown:
+### Menu Utama
+```
+Halo, Rayzell! Pilih fitur di bawah.
 
+[ 🔐 Generate 2FA ]  [ 📍 Generate Alamat ]
+```
+
+### Generate 2FA
+1. Klik **Generate 2FA** → bot minta kirim secret key
+2. Kirim secret (Base32) → OTP muncul dengan countdown:
 ```
 🔐 2FA Code: 917034
-🟢 Status: Active
+🟢 Status: Aktif
 
 ██████████  28s
 
-[ ⏱ 28s ]
+[ ⏱ 28s ]  [ ← Kembali ]
 ```
-
-4. Countdown berjalan otomatis. Saat expired, tampilan berubah:
-
+3. Saat expired:
 ```
 🔐 2FA Code: 917034
 ⏳ Status: Expired
 
-Tap Refresh to get a new OTP.
+Tap Refresh untuk mendapatkan kode baru.
 
-[ 🔄 Refresh ]
+[ 🔄 Refresh ]  [ ← Kembali ]
 ```
 
-5. Klik **Refresh** → OTP baru langsung muncul
-6. Klik **Refresh sebelum expired** → ditolak, tampil notif "OTP masih aktif. Tunggu X detik."
+### Generate Alamat Indonesia
+1. Klik **Generate Alamat** → pilih jumlah 1–10
+2. Bot generate alamat random dari 10 kota real Indonesia:
+```
+— Alamat 1 —
+Street   : Jl. Sudirman No.42
+City     : Jakarta Selatan
+Province : DKI Jakarta
+Phone    : +62 812 3456 7890
+Postal   : 12920
+Country  : Indonesia
+Full     : Jl. Sudirman No.42, Jakarta Selatan, DKI Jakarta, 12920
+
+[ ← Kembali ]  [ 🔄 Generate Baru ]
+```
+
+**Kota yang tersedia:**
+- Jakarta Selatan (DKI Jakarta)
+- Yogyakarta (DI Yogyakarta)
+- Semarang (Jawa Tengah)
+- Surabaya (Jawa Timur)
+- Bandung (Jawa Barat)
+- Medan (Sumatera Utara)
+- Banjarmasin (Kalimantan Selatan)
+- Makassar (Sulawesi Selatan)
+- Denpasar (Bali)
+- Manado (Sulawesi Utara)
 
 ---
 
@@ -70,28 +102,16 @@ Tap Refresh to get a new OTP.
 
 > Semua perintah dijalankan sebagai **root**
 
----
-
 ### STEP 1 — Update VPS
-
 ```bash
 apt update && apt upgrade -y
 apt install -y curl git nano
 ```
 
----
-
 ### STEP 2 — Install Node.js 18
-
-> ⚠️ Jangan pakai `apt install nodejs` langsung — versinya terlalu lama!
-
 ```bash
 curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
 apt install -y nodejs
-```
-
-Verifikasi:
-```bash
 node -v   # harus v18.x.x
 npm -v    # harus v8.x.x atau lebih
 ```
@@ -103,44 +123,31 @@ npm -v    # harus v8.x.x atau lebih
 > apt install -y nodejs
 > ```
 
----
-
 ### STEP 3 — Install PM2
-
 ```bash
 npm install -g pm2
 pm2 -v
 ```
 
----
-
 ### STEP 4 — Clone Repository
-
 ```bash
 cd ~
 git clone https://github.com/Rayzell25/Bot-2fa.git
 cd Bot-2fa
 ```
 
----
-
 ### STEP 5 — Install Dependencies
-
 ```bash
 npm install
 ```
 
----
-
 ### STEP 6 — Konfigurasi .env
-
 ```bash
 cp .env.example .env
 nano .env
 ```
 
 Isi file `.env`:
-
 ```env
 BOT_TOKEN=token_dari_botfather
 OWNER_ID=telegram_id_kamu
@@ -157,60 +164,38 @@ CHANNEL=@NamaChannel
 
 Simpan: **CTRL+X → Y → Enter**
 
----
-
 ### STEP 7 — Jadikan Bot sebagai Admin Channel
-
-> ⚠️ **Wajib!** Bot harus jadi admin di channel agar force-join berfungsi.
+> ⚠️ **Wajib!** Bot harus jadi admin agar force-join berfungsi.
 
 1. Buka channel Telegram kamu
 2. **Edit → Administrators → Add Administrator**
-3. Cari username bot kamu
-4. Aktifkan permission: ✅ **Add Members**
-5. Simpan
-
----
+3. Cari username bot → aktifkan ✅ **Add Members** → Simpan
 
 ### STEP 8 — Test Jalankan
-
 ```bash
 node bot.js
 ```
-
 ✅ Sukses kalau muncul:
 ```
-  2FA Secret Bot — started
-  Bot      : @namabot
-  Owner    : 123456789
-  Channel  : @RayzellStores
+  2FA + Address Bot — started
+  Bot     : @namabot
+  Owner   : 123456789
+  Channel : @RayzellStores
 ```
-
-Tekan **CTRL+C**, lalu lanjut ke STEP 9.
-
----
+Tekan **CTRL+C**, lanjut ke STEP 9.
 
 ### STEP 9 — Jalankan dengan PM2 (Permanent)
-
 ```bash
 pm2 start bot.js --name "2fa-bot"
 pm2 startup
-# Salin & jalankan perintah yang muncul dari pm2 startup
+# Salin & jalankan perintah yang muncul
 pm2 save
 ```
 
-Cek status:
-```bash
-pm2 status
-pm2 logs 2fa-bot
-```
-
----
-
 ### STEP 10 — Verifikasi
-
 1. Buka Telegram → cari username bot
 2. Ketik `/start`
-3. Kalau muncul `Hello, please enter your 2FA Secret.` → **✅ Bot berhasil!**
+3. Muncul menu utama → **✅ Bot berhasil!**
 
 ---
 
