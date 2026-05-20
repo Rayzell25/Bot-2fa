@@ -125,18 +125,45 @@ async function startOtpSession(userId, chatId, base32) {
 
   const msgId = sent.message_id;
 
-  // Update tiap 2 detik
+  // Update tiap 2 detik — STOP saat expired, tunggu user klik Refresh
   const timer = setInterval(async () => {
     try {
-      const newText = buildOtpText(base32);
       const newSecs = secondsLeft();
+
+      // Expired → stop timer, edit pesan jadi expired state, tunggu Refresh
+      if (newSecs <= 1) {
+        clearInterval(sessions[userId]?.timer);
+        let otp;
+        try { otp = getOTP(base32); } catch { otp = '------'; }
+        await bot.editMessageText(
+          `🔐 2FA Code: <code>${otp}</code>\n` +
+          `⏳ Status: <b>Expired</b>\n\n` +
+          `Tap Refresh to get a new OTP.`,
+          {
+            chat_id   : chatId,
+            message_id: msgId,
+            parse_mode: 'HTML',
+            reply_markup: {
+              inline_keyboard: [[
+                { text: '🔄 Refresh', callback_data: `refresh_${base32}` },
+              ]],
+            },
+          }
+        );
+        // Hapus timer tapi simpan session (masih butuh secret & msgId untuk Refresh)
+        sessions[userId] = { secret: base32, chatId, msgId, timer: null };
+        return;
+      }
+
+      // Masih aktif → update countdown
+      const newText = buildOtpText(base32);
       await bot.editMessageText(newText, {
         chat_id   : chatId,
         message_id: msgId,
         parse_mode: 'HTML',
         reply_markup: {
           inline_keyboard: [[
-            { text: newSecs <= 1 ? '🔄 Refresh' : `⏱ ${newSecs}s`, callback_data: `refresh_${base32}` },
+            { text: `⏱ ${newSecs}s`, callback_data: `refresh_${base32}` },
           ]],
         },
       });
@@ -224,28 +251,23 @@ bot.on('callback_query', async (query) => {
   }
 
   // ── Refresh OTP ──
-  if (data.startsWith('refresh_')) {
-    const base32 = data.slice(8);
-    const secs = secondsLeft();
+  if (query.data && query.data.startsWith('refresh_')) {
+    const base32 = query.data.slice(8);
+    const secs   = secondsLeft();
 
     // Belum expired → tolak
     if (secs > 1) {
       return bot.answerCallbackQuery(query.id, {
-        text: `OTP masih aktif. Tunggu ${secs} detik.`,
+        text      : `OTP masih aktif. Tunggu ${secs} detik.`,
         show_alert: false,
       });
     }
 
-    // Expired → refresh OTP baru
+    // Expired → hapus pesan lama, kirim OTP baru
     await bot.answerCallbackQuery(query.id, { text: 'Refreshed!' });
-
-    // Restart session dengan secret yang sama
+    try { await bot.deleteMessage(chatId, msgId); } catch (_) {}
     await startOtpSession(userId, chatId, base32);
-
-    // Hapus pesan lama
-    try {
-      await bot.deleteMessage(chatId, msgId);
-    } catch (_) {}
+    return;
   }
 
   await bot.answerCallbackQuery(query.id).catch(() => {});
