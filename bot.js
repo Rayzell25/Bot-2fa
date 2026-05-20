@@ -68,7 +68,11 @@ async function hasJoined(userId) {
     const m = await bot.getChatMember(CHANNEL, userId);
     if (m.status === 'kicked' || m.status === 'left') return false;
     return true;
-  } catch { return false; }
+  } catch {
+    // Kalau error (bot bukan admin / channel private) → loloskan user
+    // supaya yang sudah join tidak kena block karena masalah permission bot
+    return true;
+  }
 }
 
 // ─────────────────────────────────────────
@@ -136,8 +140,8 @@ const joinOpts = {
   parse_mode: 'HTML',
   reply_markup: {
     inline_keyboard: [[
-      { text: 'Join Channel', url: 'https://t.me/RayzellStores' },
-      { text: '✓ Sudah Join', callback_data: 'check_join' },
+      { text: '📢 Join Channel', url: 'https://t.me/RayzellStores' },
+      { text: '✓ Sudah Join',   callback_data: 'check_join' },
     ]],
   },
 };
@@ -153,8 +157,7 @@ bot.onText(/\/start/, async (msg) => {
 
   if (!joined) {
     return bot.sendMessage(chatId,
-      `To use this bot, you must join our channel first.\n\n` +
-      `👉 <a href="https://t.me/RayzellStores">t.me/RayzellStores</a>`,
+      `To use this bot, you must join our channel first.`,
       joinOpts
     );
   }
@@ -218,8 +221,7 @@ bot.on('message', async (msg) => {
   // Force join check
   if (!(await hasJoined(userId))) {
     return bot.sendMessage(chatId,
-      `To use this bot, you must join our channel first.\n\n` +
-      `👉 <a href="https://t.me/RayzellStores">t.me/RayzellStores</a>`,
+      `To use this bot, you must join our channel first.`,
       joinOpts
     );
   }
