@@ -47,7 +47,12 @@ function timerBar(secs) {
 }
 
 function buildOtpText(base32) {
-  const otp  = getOTP(base32);
+  let otp;
+  try {
+    otp = getOTP(base32);
+  } catch (e) {
+    otp = '------';
+  }
   const secs = secondsLeft();
   const bar  = timerBar(secs);
   const icon = secs <= 5 ? '🔴' : secs <= 10 ? '🟡' : '🟢';
@@ -82,31 +87,43 @@ function stopSession(userId) {
 // ─────────────────────────────────────────
 
 async function startOtpSession(userId, chatId, base32) {
-  // Stop any previous session
   stopSession(userId);
 
-  // Send the first OTP message
+  // Validasi dulu sebelum kirim
+  let firstOtp;
+  try {
+    firstOtp = getOTP(base32);
+  } catch (e) {
+    return bot.sendMessage(chatId,
+      `⚠️ <b>Invalid 2FA Secret.</b>\n\nCould not generate OTP from this secret.`,
+      { parse_mode: 'HTML' }
+    );
+  }
+
   const sent = await bot.sendMessage(chatId, buildOtpText(base32), {
     parse_mode: 'HTML',
   });
 
   const msgId = sent.message_id;
 
-  // Edit every second to update countdown, refresh OTP on boundary
+  // Edit tiap 2 detik (lebih aman dari rate limit Telegram)
   const timer = setInterval(async () => {
     try {
-      await bot.editMessageText(buildOtpText(base32), {
+      const text = buildOtpText(base32);
+      await bot.editMessageText(text, {
         chat_id   : chatId,
         message_id: msgId,
         parse_mode: 'HTML',
       });
     } catch (e) {
-      // Message deleted or too many edits — stop session
-      if (e.message && e.message.includes('message to edit not found')) {
+      const msg = e.message || '';
+      // Stop jika pesan dihapus
+      if (msg.includes('message to edit not found') || msg.includes('MESSAGE_ID_INVALID')) {
         stopSession(userId);
       }
+      // Rate limit — skip saja, coba lagi di iterasi berikutnya
     }
-  }, 1000);
+  }, 2000);
 
   sessions[userId] = { secret: base32, chatId, msgId, timer };
 }
