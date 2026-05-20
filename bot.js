@@ -11,11 +11,121 @@ const bot = new TelegramBot(BOT_TOKEN, {
   polling: { interval: 300, autoStart: true, params: { timeout: 10 } },
 });
 
-// ── Active OTP sessions ──
-const sessions = {};
+// ─────────────────────────────────────────
+//   DATA ALAMAT INDONESIA (real)
+// ─────────────────────────────────────────
+
+const addresses = [
+  {
+    streets  : ['Jl. Sudirman No.', 'Jl. Thamrin No.', 'Jl. Gatot Subroto No.', 'Jl. Kuningan No.', 'Jl. HR Rasuna Said No.'],
+    city     : 'Jakarta Selatan',
+    province : 'DKI Jakarta',
+    postal   : ['12190', '12920', '12930', '12940', '12950'],
+    phone_prefix: '+62 812',
+  },
+  {
+    streets  : ['Jl. Malioboro No.', 'Jl. Solo No.', 'Jl. Parangtritis No.', 'Jl. Kaliurang No.', 'Jl. Magelang No.'],
+    city     : 'Yogyakarta',
+    province : 'DI Yogyakarta',
+    postal   : ['55213', '55221', '55231', '55241', '55251'],
+    phone_prefix: '+62 821',
+  },
+  {
+    streets  : ['Jl. Pemuda No.', 'Jl. Pandanaran No.', 'Jl. Gajah Mada No.', 'Jl. MT Haryono No.', 'Jl. Imam Bonjol No.'],
+    city     : 'Semarang',
+    province : 'Jawa Tengah',
+    postal   : ['50132', '50133', '50134', '50135', '50136'],
+    phone_prefix: '+62 817',
+  },
+  {
+    streets  : ['Jl. Darmo No.', 'Jl. Basuki Rahmat No.', 'Jl. Gubeng No.', 'Jl. Diponegoro No.', 'Jl. Embong Malang No.'],
+    city     : 'Surabaya',
+    province : 'Jawa Timur',
+    postal   : ['60241', '60251', '60261', '60271', '60281'],
+    phone_prefix: '+62 813',
+  },
+  {
+    streets  : ['Jl. Asia Afrika No.', 'Jl. Braga No.', 'Jl. Dago No.', 'Jl. Riau No.', 'Jl. Supratman No.'],
+    city     : 'Bandung',
+    province : 'Jawa Barat',
+    postal   : ['40111', '40112', '40113', '40114', '40115'],
+    phone_prefix: '+62 822',
+  },
+  {
+    streets  : ['Jl. Imam Bonjol No.', 'Jl. Diponegoro No.', 'Jl. Pemuda No.', 'Jl. Sutomo No.', 'Jl. Nibung No.'],
+    city     : 'Medan',
+    province : 'Sumatera Utara',
+    postal   : ['20151', '20152', '20153', '20154', '20155'],
+    phone_prefix: '+62 811',
+  },
+  {
+    streets  : ['Jl. Ahmad Yani No.', 'Jl. Lambung Mangkurat No.', 'Jl. Jendral Sudirman No.', 'Jl. Pangeran Samudera No.', 'Jl. Hasanuddin No.'],
+    city     : 'Banjarmasin',
+    province : 'Kalimantan Selatan',
+    postal   : ['70111', '70112', '70113', '70114', '70115'],
+    phone_prefix: '+62 851',
+  },
+  {
+    streets  : ['Jl. Pettarani No.', 'Jl. Urip Sumoharjo No.', 'Jl. Sultan Hasanuddin No.', 'Jl. Ratulangi No.', 'Jl. Penghibur No.'],
+    city     : 'Makassar',
+    province : 'Sulawesi Selatan',
+    postal   : ['90111', '90112', '90113', '90114', '90115'],
+    phone_prefix: '+62 852',
+  },
+  {
+    streets  : ['Jl. Diponegoro No.', 'Jl. Teuku Umar No.', 'Jl. Hayam Wuruk No.', 'Jl. Gatot Subroto No.', 'Jl. Imam Bonjol No.'],
+    city     : 'Denpasar',
+    province : 'Bali',
+    postal   : ['80111', '80112', '80113', '80114', '80115'],
+    phone_prefix: '+62 819',
+  },
+  {
+    streets  : ['Jl. Sam Ratulangi No.', 'Jl. Ahmad Yani No.', 'Jl. Sudirman No.', 'Jl. Pierre Tendean No.', 'Jl. Walanda Maramis No.'],
+    city     : 'Manado',
+    province : 'Sulawesi Utara',
+    postal   : ['95111', '95112', '95113', '95114', '95115'],
+    phone_prefix: '+62 853',
+  },
+];
+
+function rand(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function randItem(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function generateAddress() {
+  const loc    = randItem(addresses);
+  const street = randItem(loc.streets) + rand(1, 150);
+  const postal = randItem(loc.postal);
+  const phone  = `${loc.phone_prefix} ${rand(1000, 9999)} ${rand(1000, 9999)}`;
+  const full   = `${street}, ${loc.city}, ${loc.province}, ${postal}`;
+  return { street, city: loc.city, province: loc.province, phone, postal, country: 'Indonesia', full };
+}
+
+function generateAddresses(n) {
+  const res = [];
+  for (let i = 0; i < n; i++) res.push(generateAddress());
+  return res;
+}
+
+function formatAddress(addr, i) {
+  return (
+    `<b>— Alamat ${i} —</b>\n` +
+    `Street   : <code>${addr.street}</code>\n` +
+    `City     : <code>${addr.city}</code>\n` +
+    `Province : <code>${addr.province}</code>\n` +
+    `Phone    : <code>${addr.phone}</code>\n` +
+    `Postal   : <code>${addr.postal}</code>\n` +
+    `Country  : <code>${addr.country}</code>\n` +
+    `Full     : <code>${addr.full}</code>`
+  );
+}
 
 // ─────────────────────────────────────────
-//   HELPERS
+//   2FA HELPERS
 // ─────────────────────────────────────────
 
 function isValid2FASecret(input) {
@@ -31,17 +141,14 @@ function getOTP(base32) {
   return totp.generate();
 }
 
-// Period index — berubah tiap 30 detik
 function currentPeriod() {
   return Math.floor(Date.now() / 1000 / 30);
 }
 
-// Sisa detik dalam period ini
 function secondsLeft() {
   return 30 - (Math.floor(Date.now() / 1000) % 30);
 }
 
-// Bar animasi countdown
 function timerBar(secs) {
   const filled = Math.round((secs / 30) * 10);
   const empty  = 10 - filled;
@@ -57,8 +164,11 @@ async function hasJoined(userId) {
 }
 
 // ─────────────────────────────────────────
-//   STOP session
+//   SESSIONS
 // ─────────────────────────────────────────
+
+const sessions = {}; // OTP sessions
+const msgCache = {}; // userId → msgId (pesan utama, untuk di-edit)
 
 function stopSession(userId) {
   if (sessions[userId]) {
@@ -68,93 +178,15 @@ function stopSession(userId) {
 }
 
 // ─────────────────────────────────────────
-//   START OTP session
+//   KEYBOARDS
 // ─────────────────────────────────────────
 
-async function startOtpSession(userId, chatId, base32) {
-  stopSession(userId);
-
-  let otp;
-  try {
-    otp = getOTP(base32);
-  } catch {
-    return bot.sendMessage(chatId, `Error: This is not 2FA Secret !`, { parse_mode: 'HTML' });
-  }
-
-  const startPeriod = currentPeriod();
-  const secs        = secondsLeft();
-  const icon        = secs <= 5 ? '🔴' : secs <= 10 ? '🟡' : '🟢';
-
-  const sent = await bot.sendMessage(chatId,
-    `🔐 2FA Code: <code>${otp}</code>\n` +
-    `${icon} Status: <b>Active</b>\n\n` +
-    `<code>${timerBar(secs)}</code>`,
-    {
-      parse_mode   : 'HTML',
-      reply_markup : { inline_keyboard: [[
-        { text: `⏱ ${secs}s`, callback_data: `refresh_${base32}` },
-      ]]},
-    }
-  );
-
-  const msgId = sent.message_id;
-
-  // Update tiap 2 detik
-  const timer = setInterval(async () => {
-    try {
-      const nowPeriod = currentPeriod();
-      const nowSecs   = secondsLeft();
-
-      // Period berubah = OTP expired → stop timer, tampil tombol Refresh
-      if (nowPeriod !== startPeriod) {
-        clearInterval(sessions[userId]?.timer);
-        if (sessions[userId]) sessions[userId].timer = null;
-
-        await bot.editMessageText(
-          `🔐 2FA Code: <code>${otp}</code>\n` +
-          `⏳ Status: <b>Expired</b>\n\n` +
-          `Tap Refresh to get a new OTP.`,
-          {
-            chat_id      : chatId,
-            message_id   : msgId,
-            parse_mode   : 'HTML',
-            reply_markup : { inline_keyboard: [[
-              { text: '🔄 Refresh', callback_data: `refresh_${base32}` },
-            ]]},
-          }
-        );
-        return;
-      }
-
-      // Masih period yang sama → update countdown
-      const ic = nowSecs <= 5 ? '🔴' : nowSecs <= 10 ? '🟡' : '🟢';
-      await bot.editMessageText(
-        `🔐 2FA Code: <code>${otp}</code>\n` +
-        `${ic} Status: <b>Active</b>\n\n` +
-        `<code>${timerBar(nowSecs)}</code>`,
-        {
-          chat_id      : chatId,
-          message_id   : msgId,
-          parse_mode   : 'HTML',
-          reply_markup : { inline_keyboard: [[
-            { text: `⏱ ${nowSecs}s`, callback_data: `refresh_${base32}` },
-          ]]},
-        }
-      );
-    } catch (e) {
-      const m = e.message || '';
-      if (m.includes('message to edit not found') || m.includes('MESSAGE_ID_INVALID')) {
-        stopSession(userId);
-      }
-    }
-  }, 2000);
-
-  sessions[userId] = { secret: base32, chatId, msgId, timer };
-}
-
-// ─────────────────────────────────────────
-//   JOIN OPTS
-// ─────────────────────────────────────────
+const mainMenu = {
+  inline_keyboard: [[
+    { text: '🔐 Generate 2FA',    callback_data: 'menu_2fa'     },
+    { text: '📍 Generate Alamat', callback_data: 'menu_address' },
+  ]],
+};
 
 const joinOpts = {
   parse_mode: 'HTML',
@@ -167,24 +199,133 @@ const joinOpts = {
 };
 
 // ─────────────────────────────────────────
+//   SEND / EDIT helper (1 pesan saja)
+// ─────────────────────────────────────────
+
+async function sendOrEdit(chatId, userId, text, opts = {}) {
+  const mid = msgCache[userId];
+  if (mid) {
+    try {
+      await bot.editMessageText(text, {
+        chat_id   : chatId,
+        message_id: mid,
+        parse_mode: 'HTML',
+        ...opts,
+      });
+      return mid;
+    } catch (_) {}
+  }
+  // Kirim baru kalau belum ada atau gagal edit
+  const sent = await bot.sendMessage(chatId, text, { parse_mode: 'HTML', ...opts });
+  msgCache[userId] = sent.message_id;
+  return sent.message_id;
+}
+
+// ─────────────────────────────────────────
 //   /start
 // ─────────────────────────────────────────
 
 bot.onText(/\/start/, async (msg) => {
   const chatId = msg.chat.id;
-  const name   = msg.from.first_name || 'there';
-  const joined = await hasJoined(msg.from.id);
+  const userId = msg.from.id;
+  const name   = msg.from.first_name || 'Pengguna';
+  const joined = await hasJoined(userId);
+
+  stopSession(userId);
 
   if (!joined) {
-    return bot.sendMessage(chatId,
-      `To use this bot, you must join our channel first.`,
+    const sent = await bot.sendMessage(chatId,
+      `Untuk menggunakan bot ini, kamu harus join channel kami dulu.`,
       joinOpts
     );
+    msgCache[userId] = sent.message_id;
+    return;
   }
 
-  stopSession(msg.from.id);
-  return bot.sendMessage(chatId, `Hello, please enter your 2FA Secret.`, { parse_mode: 'HTML' });
+  await sendOrEdit(chatId, userId,
+    `Halo, <b>${name}</b>! Pilih fitur di bawah.`,
+    { reply_markup: mainMenu }
+  );
 });
+
+// ─────────────────────────────────────────
+//   OTP SESSION
+// ─────────────────────────────────────────
+
+async function startOtpSession(userId, chatId, base32) {
+  stopSession(userId);
+
+  let otp;
+  try { otp = getOTP(base32); }
+  catch { return sendOrEdit(chatId, userId, `Error: This is not 2FA Secret !`); }
+
+  const startPeriod = currentPeriod();
+  const secs        = secondsLeft();
+  const ic          = secs <= 5 ? '🔴' : secs <= 10 ? '🟡' : '🟢';
+
+  const msgId = await sendOrEdit(chatId, userId,
+    `🔐 2FA Code: <code>${otp}</code>\n` +
+    `${ic} Status: <b>Aktif</b>\n\n` +
+    `<code>${timerBar(secs)}</code>`,
+    {
+      reply_markup: { inline_keyboard: [[
+        { text: `⏱ ${secs}s`,       callback_data: `otp_refresh_${base32}` },
+        { text: '← Kembali',        callback_data: 'otp_back' },
+      ]]},
+    }
+  );
+
+  const timer = setInterval(async () => {
+    try {
+      const nowPeriod = currentPeriod();
+      const nowSecs   = secondsLeft();
+
+      if (nowPeriod !== startPeriod) {
+        clearInterval(sessions[userId]?.timer);
+        if (sessions[userId]) sessions[userId].timer = null;
+
+        await bot.editMessageText(
+          `🔐 2FA Code: <code>${otp}</code>\n` +
+          `⏳ Status: <b>Expired</b>\n\n` +
+          `Tap Refresh untuk mendapatkan kode baru.`,
+          {
+            chat_id      : chatId,
+            message_id   : msgId,
+            parse_mode   : 'HTML',
+            reply_markup : { inline_keyboard: [[
+              { text: '🔄 Refresh',  callback_data: `otp_refresh_${base32}` },
+              { text: '← Kembali',  callback_data: 'otp_back' },
+            ]]},
+          }
+        );
+        return;
+      }
+
+      const ic2 = nowSecs <= 5 ? '🔴' : nowSecs <= 10 ? '🟡' : '🟢';
+      await bot.editMessageText(
+        `🔐 2FA Code: <code>${otp}</code>\n` +
+        `${ic2} Status: <b>Aktif</b>\n\n` +
+        `<code>${timerBar(nowSecs)}</code>`,
+        {
+          chat_id      : chatId,
+          message_id   : msgId,
+          parse_mode   : 'HTML',
+          reply_markup : { inline_keyboard: [[
+            { text: `⏱ ${nowSecs}s`, callback_data: `otp_refresh_${base32}` },
+            { text: '← Kembali',    callback_data: 'otp_back' },
+          ]]},
+        }
+      );
+    } catch (e) {
+      const em = e.message || '';
+      if (em.includes('message to edit not found') || em.includes('MESSAGE_ID_INVALID')) {
+        stopSession(userId);
+      }
+    }
+  }, 2000);
+
+  sessions[userId] = { secret: base32, chatId, msgId, timer };
+}
 
 // ─────────────────────────────────────────
 //   CALLBACK QUERY
@@ -194,46 +335,125 @@ bot.on('callback_query', async (query) => {
   const userId = query.from.id;
   const chatId = query.message.chat.id;
   const msgId  = query.message.message_id;
-  const name   = query.from.first_name || 'there';
+  const name   = query.from.first_name || 'Pengguna';
+  const data   = query.data || '';
 
   // ── check_join ──
-  if (query.data === 'check_join') {
+  if (data === 'check_join') {
     const joined = await hasJoined(userId);
     if (!joined) {
       return bot.answerCallbackQuery(query.id, {
-        text: 'You have not joined yet. Please join the channel first.',
-        show_alert: true,
+        text: 'Kamu belum join. Silakan join channel dulu.', show_alert: true,
       });
     }
-    await bot.answerCallbackQuery(query.id, { text: 'Verified! Welcome.' });
-    try {
-      await bot.editMessageText(`Hello, please enter your 2FA Secret.`,
-        { chat_id: chatId, message_id: msgId, parse_mode: 'HTML' });
-    } catch {
-      await bot.sendMessage(chatId, `Hello, please enter your 2FA Secret.`, { parse_mode: 'HTML' });
-    }
+    await bot.answerCallbackQuery(query.id, { text: 'Berhasil! Selamat datang.' });
+    msgCache[userId] = msgId;
+    await sendOrEdit(chatId, userId,
+      `Halo, <b>${name}</b>! Pilih fitur di bawah.`,
+      { reply_markup: mainMenu }
+    );
     return;
   }
 
-  // ── refresh_<base32> ──
-  if (query.data && query.data.startsWith('refresh_')) {
-    const base32 = query.data.slice(8);
+  // ── menu_2fa ──
+  if (data === 'menu_2fa') {
+    await bot.answerCallbackQuery(query.id);
+    msgCache[userId] = msgId;
+    stopSession(userId);
+    await sendOrEdit(chatId, userId,
+      `🔐 <b>Generate 2FA</b>\n\nKirim secret key 2FA kamu (Base32).\n\n<i>Contoh: <code>JBSWY3DPEHPK3PXP</code></i>`,
+      { reply_markup: { inline_keyboard: [[{ text: '← Kembali', callback_data: 'back_main' }]] } }
+    );
+    return;
+  }
 
-    // Cek apakah session user masih punya timer (timer null = sudah expired, boleh refresh)
-    const sess = sessions[userId];
+  // ── menu_address ──
+  if (data === 'menu_address') {
+    await bot.answerCallbackQuery(query.id);
+    msgCache[userId] = msgId;
+    await sendOrEdit(chatId, userId,
+      `📍 <b>Generate Alamat Indonesia</b>\n\nPilih jumlah alamat yang ingin di-generate.`,
+      {
+        reply_markup: { inline_keyboard: [
+          [
+            { text: '1',  callback_data: 'addr_1'  },
+            { text: '2',  callback_data: 'addr_2'  },
+            { text: '3',  callback_data: 'addr_3'  },
+            { text: '4',  callback_data: 'addr_4'  },
+            { text: '5',  callback_data: 'addr_5'  },
+          ],
+          [
+            { text: '6',  callback_data: 'addr_6'  },
+            { text: '7',  callback_data: 'addr_7'  },
+            { text: '8',  callback_data: 'addr_8'  },
+            { text: '9',  callback_data: 'addr_9'  },
+            { text: '10', callback_data: 'addr_10' },
+          ],
+          [{ text: '← Kembali', callback_data: 'back_main' }],
+        ]},
+      }
+    );
+    return;
+  }
 
-    // Kalau timer masih jalan = belum expired
+  // ── addr_N ──
+  if (data.startsWith('addr_')) {
+    const n    = parseInt(data.replace('addr_', ''));
+    const last = data; // simpan untuk tombol Generate Baru
+    await bot.answerCallbackQuery(query.id);
+    msgCache[userId] = msgId;
+
+    const addrs = generateAddresses(n);
+    const text  = addrs.map((a, i) => formatAddress(a, i + 1)).join('\n\n');
+
+    await sendOrEdit(chatId, userId, text, {
+      reply_markup: { inline_keyboard: [[
+        { text: '← Kembali',      callback_data: 'menu_address' },
+        { text: '🔄 Generate Baru', callback_data: last },
+      ]]},
+    });
+    return;
+  }
+
+  // ── back_main ──
+  if (data === 'back_main') {
+    await bot.answerCallbackQuery(query.id);
+    msgCache[userId] = msgId;
+    stopSession(userId);
+    await sendOrEdit(chatId, userId,
+      `Halo, <b>${name}</b>! Pilih fitur di bawah.`,
+      { reply_markup: mainMenu }
+    );
+    return;
+  }
+
+  // ── otp_back ──
+  if (data === 'otp_back') {
+    await bot.answerCallbackQuery(query.id);
+    stopSession(userId);
+    msgCache[userId] = msgId;
+    await sendOrEdit(chatId, userId,
+      `Halo, <b>${name}</b>! Pilih fitur di bawah.`,
+      { reply_markup: mainMenu }
+    );
+    return;
+  }
+
+  // ── otp_refresh_<base32> ──
+  if (data.startsWith('otp_refresh_')) {
+    const base32 = data.slice(12);
+    const sess   = sessions[userId];
+
+    // Timer masih jalan = belum expired
     if (sess && sess.timer !== null) {
       const secs = secondsLeft();
       return bot.answerCallbackQuery(query.id, {
-        text      : `OTP masih aktif. Tunggu ${secs} detik lagi.`,
-        show_alert: false,
+        text: `OTP masih aktif. Tunggu ${secs} detik lagi.`, show_alert: false,
       });
     }
 
-    // Expired → hapus pesan lama, mulai session baru
     await bot.answerCallbackQuery(query.id, { text: 'Refreshed!' });
-    try { await bot.deleteMessage(chatId, msgId); } catch (_) {}
+    msgCache[userId] = msgId;
     await startOtpSession(userId, chatId, base32);
     return;
   }
@@ -242,7 +462,7 @@ bot.on('callback_query', async (query) => {
 });
 
 // ─────────────────────────────────────────
-//   MESSAGE HANDLER
+//   MESSAGE — terima secret 2FA
 // ─────────────────────────────────────────
 
 bot.on('message', async (msg) => {
@@ -253,13 +473,23 @@ bot.on('message', async (msg) => {
   const text   = msg.text.trim();
 
   if (!(await hasJoined(userId))) {
-    return bot.sendMessage(chatId, `To use this bot, you must join our channel first.`, joinOpts);
+    return bot.sendMessage(chatId,
+      `Untuk menggunakan bot ini, kamu harus join channel kami dulu.`,
+      joinOpts
+    );
   }
+
+  // Hapus pesan user biar chat tetap rapi (opsional, bisa di-comment kalau error)
+  try { await bot.deleteMessage(chatId, msg.message_id); } catch (_) {}
 
   const input = text.toUpperCase().replace(/\s+/g, '');
 
   if (!isValid2FASecret(input)) {
-    return bot.sendMessage(chatId, `Error: This is not 2FA Secret !`, { parse_mode: 'HTML' });
+    await sendOrEdit(chatId, userId,
+      `Error: This is not 2FA Secret !\n\n<i>Kembali ke menu?</i>`,
+      { reply_markup: { inline_keyboard: [[{ text: '← Kembali', callback_data: 'back_main' }]] } }
+    );
+    return;
   }
 
   await startOtpSession(userId, chatId, input);
@@ -277,8 +507,8 @@ bot.on('polling_error', (err) => {
 //   STARTUP
 // ─────────────────────────────────────────
 console.log('');
-console.log('  2FA Secret Bot — started');
-console.log(`  Bot      : @${BOT_USERNAME}`);
-console.log(`  Owner    : ${OWNER_ID}`);
-console.log(`  Channel  : ${CHANNEL}`);
+console.log('  2FA + Address Bot — started');
+console.log(`  Bot     : @${BOT_USERNAME}`);
+console.log(`  Owner   : ${OWNER_ID}`);
+console.log(`  Channel : ${CHANNEL}`);
 console.log('');
