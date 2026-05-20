@@ -11,7 +11,7 @@ const bot = new TelegramBot(BOT_TOKEN, {
   polling: { interval: 300, autoStart: true, params: { timeout: 10 } },
 });
 
-// ── Active OTP sessions: userId → { secret, chatId, msgId, timer } ──
+// ── Active OTP sessions ──
 const sessions = {};
 
 // ─────────────────────────────────────────
@@ -31,43 +31,21 @@ function getOTP(base32) {
   return totp.generate();
 }
 
-// Sisa detik sebelum OTP berikutnya
+// Period index — berubah tiap 30 detik
+function currentPeriod() {
+  return Math.floor(Date.now() / 1000 / 30);
+}
+
+// Sisa detik dalam period ini
 function secondsLeft() {
   return 30 - (Math.floor(Date.now() / 1000) % 30);
 }
 
 // Bar animasi countdown
 function timerBar(secs) {
-  const total  = 30;
-  const filled = Math.round((secs / total) * 10);
+  const filled = Math.round((secs / 30) * 10);
   const empty  = 10 - filled;
-  // Hijau kalau masih banyak, kuning kalau mau habis
-  const bar = '█'.repeat(filled) + '░'.repeat(empty);
-  return `${bar}  ${secs}s`;
-}
-
-function buildOtpText(base32) {
-  let otp;
-  try {
-    otp = getOTP(base32);
-  } catch (e) {
-    otp = '------';
-  }
-  const secs = secondsLeft();
-  if (secs <= 1) {
-    return (
-      `🔐 2FA Code: <code>${otp}</code>\n` +
-      `⏳ Status: <b>Expired</b>\n\n` +
-      `Tap Refresh to get a new OTP.`
-    );
-  }
-  const bar  = timerBar(secs);
-  const icon = secs <= 5 ? '🔴' : secs <= 10 ? '🟡' : '🟢';
-  return (
-    `🔐 2FA Code: <code>${otp}</code>\n` +
-    `${icon} Status: <b>Active</b>\n\n` +
-    `<code>${bar}</code>`
-  );
+  return '█'.repeat(filled) + '░'.repeat(empty) + `  ${secs}s`;
 }
 
 async function hasJoined(userId) {
@@ -75,15 +53,11 @@ async function hasJoined(userId) {
     const m = await bot.getChatMember(CHANNEL, userId);
     if (m.status === 'kicked' || m.status === 'left') return false;
     return true;
-  } catch {
-    // Kalau error (bot bukan admin / channel private) → loloskan user
-    // supaya yang sudah join tidak kena block karena masalah permission bot
-    return true;
-  }
+  } catch { return true; }
 }
 
 // ─────────────────────────────────────────
-//   STOP old session for a user
+//   STOP session
 // ─────────────────────────────────────────
 
 function stopSession(userId) {
@@ -94,82 +68,82 @@ function stopSession(userId) {
 }
 
 // ─────────────────────────────────────────
-//   START a live OTP session
+//   START OTP session
 // ─────────────────────────────────────────
 
 async function startOtpSession(userId, chatId, base32) {
   stopSession(userId);
 
-  // Validasi dulu sebelum kirim
-  let firstOtp;
+  let otp;
   try {
-    firstOtp = getOTP(base32);
-  } catch (e) {
-    return bot.sendMessage(chatId,
-      `Error: This is not 2FA Secret !`,
-      { parse_mode: 'HTML' }
-    );
+    otp = getOTP(base32);
+  } catch {
+    return bot.sendMessage(chatId, `Error: This is not 2FA Secret !`, { parse_mode: 'HTML' });
   }
 
-  const text = buildOtpText(base32);
-  const secs = secondsLeft();
+  const startPeriod = currentPeriod();
+  const secs        = secondsLeft();
+  const icon        = secs <= 5 ? '🔴' : secs <= 10 ? '🟡' : '🟢';
 
-  const sent = await bot.sendMessage(chatId, text, {
-    parse_mode: 'HTML',
-    reply_markup: {
-      inline_keyboard: [[
-        { text: secs <= 1 ? '🔄 Refresh' : `⏱ ${secs}s`, callback_data: `refresh_${base32}` },
-      ]],
-    },
-  });
+  const sent = await bot.sendMessage(chatId,
+    `🔐 2FA Code: <code>${otp}</code>\n` +
+    `${icon} Status: <b>Active</b>\n\n` +
+    `<code>${timerBar(secs)}</code>`,
+    {
+      parse_mode   : 'HTML',
+      reply_markup : { inline_keyboard: [[
+        { text: `⏱ ${secs}s`, callback_data: `refresh_${base32}` },
+      ]]},
+    }
+  );
 
   const msgId = sent.message_id;
 
-  // Update tiap 2 detik — STOP saat expired, tunggu user klik Refresh
+  // Update tiap 2 detik
   const timer = setInterval(async () => {
     try {
-      const newSecs = secondsLeft();
+      const nowPeriod = currentPeriod();
+      const nowSecs   = secondsLeft();
 
-      // Expired → stop timer, edit pesan jadi expired state, tunggu Refresh
-      if (newSecs <= 1) {
+      // Period berubah = OTP expired → stop timer, tampil tombol Refresh
+      if (nowPeriod !== startPeriod) {
         clearInterval(sessions[userId]?.timer);
-        let otp;
-        try { otp = getOTP(base32); } catch { otp = '------'; }
+        if (sessions[userId]) sessions[userId].timer = null;
+
         await bot.editMessageText(
           `🔐 2FA Code: <code>${otp}</code>\n` +
           `⏳ Status: <b>Expired</b>\n\n` +
           `Tap Refresh to get a new OTP.`,
           {
-            chat_id   : chatId,
-            message_id: msgId,
-            parse_mode: 'HTML',
-            reply_markup: {
-              inline_keyboard: [[
-                { text: '🔄 Refresh', callback_data: `refresh_${base32}` },
-              ]],
-            },
+            chat_id      : chatId,
+            message_id   : msgId,
+            parse_mode   : 'HTML',
+            reply_markup : { inline_keyboard: [[
+              { text: '🔄 Refresh', callback_data: `refresh_${base32}` },
+            ]]},
           }
         );
-        // Hapus timer tapi simpan session (masih butuh secret & msgId untuk Refresh)
-        sessions[userId] = { secret: base32, chatId, msgId, timer: null };
         return;
       }
 
-      // Masih aktif → update countdown
-      const newText = buildOtpText(base32);
-      await bot.editMessageText(newText, {
-        chat_id   : chatId,
-        message_id: msgId,
-        parse_mode: 'HTML',
-        reply_markup: {
-          inline_keyboard: [[
-            { text: `⏱ ${newSecs}s`, callback_data: `refresh_${base32}` },
-          ]],
-        },
-      });
+      // Masih period yang sama → update countdown
+      const ic = nowSecs <= 5 ? '🔴' : nowSecs <= 10 ? '🟡' : '🟢';
+      await bot.editMessageText(
+        `🔐 2FA Code: <code>${otp}</code>\n` +
+        `${ic} Status: <b>Active</b>\n\n` +
+        `<code>${timerBar(nowSecs)}</code>`,
+        {
+          chat_id      : chatId,
+          message_id   : msgId,
+          parse_mode   : 'HTML',
+          reply_markup : { inline_keyboard: [[
+            { text: `⏱ ${nowSecs}s`, callback_data: `refresh_${base32}` },
+          ]]},
+        }
+      );
     } catch (e) {
-      const msg = e.message || '';
-      if (msg.includes('message to edit not found') || msg.includes('MESSAGE_ID_INVALID')) {
+      const m = e.message || '';
+      if (m.includes('message to edit not found') || m.includes('MESSAGE_ID_INVALID')) {
         stopSession(userId);
       }
     }
@@ -209,15 +183,11 @@ bot.onText(/\/start/, async (msg) => {
   }
 
   stopSession(msg.from.id);
-
-  return bot.sendMessage(chatId,
-    `Hello, please enter your 2FA Secret.`,
-    { parse_mode: 'HTML' }
-  );
+  return bot.sendMessage(chatId, `Hello, please enter your 2FA Secret.`, { parse_mode: 'HTML' });
 });
 
 // ─────────────────────────────────────────
-//   CALLBACK QUERY — check_join
+//   CALLBACK QUERY
 // ─────────────────────────────────────────
 
 bot.on('callback_query', async (query) => {
@@ -225,8 +195,8 @@ bot.on('callback_query', async (query) => {
   const chatId = query.message.chat.id;
   const msgId  = query.message.message_id;
   const name   = query.from.first_name || 'there';
-  const data   = query.data || '';
 
+  // ── check_join ──
   if (query.data === 'check_join') {
     const joined = await hasJoined(userId);
     if (!joined) {
@@ -235,36 +205,33 @@ bot.on('callback_query', async (query) => {
         show_alert: true,
       });
     }
-
     await bot.answerCallbackQuery(query.id, { text: 'Verified! Welcome.' });
-
     try {
-      await bot.editMessageText(
-        `Hello, please enter your 2FA Secret.`,
-        { chat_id: chatId, message_id: msgId, parse_mode: 'HTML' }
-      );
-    } catch (_) {
-      await bot.sendMessage(chatId,
-        `Hello, please enter your 2FA Secret.`,
-        { parse_mode: 'HTML' }
-      );
+      await bot.editMessageText(`Hello, please enter your 2FA Secret.`,
+        { chat_id: chatId, message_id: msgId, parse_mode: 'HTML' });
+    } catch {
+      await bot.sendMessage(chatId, `Hello, please enter your 2FA Secret.`, { parse_mode: 'HTML' });
     }
+    return;
   }
 
-  // ── Refresh OTP ──
+  // ── refresh_<base32> ──
   if (query.data && query.data.startsWith('refresh_')) {
     const base32 = query.data.slice(8);
-    const secs   = secondsLeft();
 
-    // Belum expired → tolak
-    if (secs > 1) {
+    // Cek apakah session user masih punya timer (timer null = sudah expired, boleh refresh)
+    const sess = sessions[userId];
+
+    // Kalau timer masih jalan = belum expired
+    if (sess && sess.timer !== null) {
+      const secs = secondsLeft();
       return bot.answerCallbackQuery(query.id, {
-        text      : `OTP masih aktif. Tunggu ${secs} detik.`,
+        text      : `OTP masih aktif. Tunggu ${secs} detik lagi.`,
         show_alert: false,
       });
     }
 
-    // Expired → hapus pesan lama, kirim OTP baru
+    // Expired → hapus pesan lama, mulai session baru
     await bot.answerCallbackQuery(query.id, { text: 'Refreshed!' });
     try { await bot.deleteMessage(chatId, msgId); } catch (_) {}
     await startOtpSession(userId, chatId, base32);
@@ -275,7 +242,7 @@ bot.on('callback_query', async (query) => {
 });
 
 // ─────────────────────────────────────────
-//   MESSAGE — accept secret input
+//   MESSAGE HANDLER
 // ─────────────────────────────────────────
 
 bot.on('message', async (msg) => {
@@ -285,29 +252,21 @@ bot.on('message', async (msg) => {
   const userId = msg.from.id;
   const text   = msg.text.trim();
 
-  // Force join check
   if (!(await hasJoined(userId))) {
-    return bot.sendMessage(chatId,
-      `To use this bot, you must join our channel first.`,
-      joinOpts
-    );
+    return bot.sendMessage(chatId, `To use this bot, you must join our channel first.`, joinOpts);
   }
 
   const input = text.toUpperCase().replace(/\s+/g, '');
 
   if (!isValid2FASecret(input)) {
-    return bot.sendMessage(chatId,
-      `Error: This is not 2FA Secret !`,
-      { parse_mode: 'HTML' }
-    );
+    return bot.sendMessage(chatId, `Error: This is not 2FA Secret !`, { parse_mode: 'HTML' });
   }
 
-  // Start live OTP session
   await startOtpSession(userId, chatId, input);
 });
 
 // ─────────────────────────────────────────
-//   POLLING ERROR
+//   ERROR HANDLER
 // ─────────────────────────────────────────
 
 bot.on('polling_error', (err) => {
