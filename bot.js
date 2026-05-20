@@ -68,7 +68,7 @@ async function hasJoined(userId) {
     const m = await bot.getChatMember(CHANNEL, userId);
     if (m.status === 'kicked' || m.status === 'left') return false;
     return true;
-  } catch { return true; }
+  } catch { return false; }
 }
 
 // ─────────────────────────────────────────
@@ -228,7 +228,7 @@ bot.on('message', async (msg) => {
 
   if (!isValid2FASecret(input)) {
     return bot.sendMessage(chatId,
-      `⚠️ <b>Invalid 2FA Secret.</b>\n\nMake sure you send a valid Base32 secret key.\n\n<i>Example: <code>JBSWY3DPEHPK3PXP</code></i>`,
+      `Error: This is not 2FA Secret !`,
       { parse_mode: 'HTML' }
     );
   }
