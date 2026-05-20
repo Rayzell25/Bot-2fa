@@ -54,12 +54,19 @@ function buildOtpText(base32) {
     otp = '------';
   }
   const secs = secondsLeft();
+  if (secs <= 1) {
+    return (
+      `🔐 2FA Code: <code>${otp}</code>\n` +
+      `⏳ Status: <b>Expired</b>\n\n` +
+      `Tap Refresh to get a new OTP.`
+    );
+  }
   const bar  = timerBar(secs);
   const icon = secs <= 5 ? '🔴' : secs <= 10 ? '🟡' : '🟢';
   return (
-    `🔐 <b>Your OTP Code</b>\n\n` +
-    `☞ <code>${otp}</code>\n\n` +
-    `${icon} <code>${bar}</code>`
+    `🔐 2FA Code: <code>${otp}</code>\n` +
+    `${icon} Status: <b>Active</b>\n\n` +
+    `<code>${bar}</code>`
   );
 }
 
@@ -99,33 +106,45 @@ async function startOtpSession(userId, chatId, base32) {
     firstOtp = getOTP(base32);
   } catch (e) {
     return bot.sendMessage(chatId,
-      `⚠️ <b>Invalid 2FA Secret.</b>\n\nCould not generate OTP from this secret.`,
+      `Error: This is not 2FA Secret !`,
       { parse_mode: 'HTML' }
     );
   }
 
-  const sent = await bot.sendMessage(chatId, buildOtpText(base32), {
+  const text = buildOtpText(base32);
+  const secs = secondsLeft();
+
+  const sent = await bot.sendMessage(chatId, text, {
     parse_mode: 'HTML',
+    reply_markup: {
+      inline_keyboard: [[
+        { text: secs <= 1 ? '🔄 Refresh' : `⏱ ${secs}s`, callback_data: `refresh_${base32}` },
+      ]],
+    },
   });
 
   const msgId = sent.message_id;
 
-  // Edit tiap 2 detik (lebih aman dari rate limit Telegram)
+  // Update tiap 2 detik
   const timer = setInterval(async () => {
     try {
-      const text = buildOtpText(base32);
-      await bot.editMessageText(text, {
+      const newText = buildOtpText(base32);
+      const newSecs = secondsLeft();
+      await bot.editMessageText(newText, {
         chat_id   : chatId,
         message_id: msgId,
         parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [[
+            { text: newSecs <= 1 ? '🔄 Refresh' : `⏱ ${newSecs}s`, callback_data: `refresh_${base32}` },
+          ]],
+        },
       });
     } catch (e) {
       const msg = e.message || '';
-      // Stop jika pesan dihapus
       if (msg.includes('message to edit not found') || msg.includes('MESSAGE_ID_INVALID')) {
         stopSession(userId);
       }
-      // Rate limit — skip saja, coba lagi di iterasi berikutnya
     }
   }, 2000);
 
@@ -202,6 +221,31 @@ bot.on('callback_query', async (query) => {
         { parse_mode: 'HTML' }
       );
     }
+  }
+
+  // ── Refresh OTP ──
+  if (data.startsWith('refresh_')) {
+    const base32 = data.slice(8);
+    const secs = secondsLeft();
+
+    // Belum expired → tolak
+    if (secs > 1) {
+      return bot.answerCallbackQuery(query.id, {
+        text: `OTP masih aktif. Tunggu ${secs} detik.`,
+        show_alert: false,
+      });
+    }
+
+    // Expired → refresh OTP baru
+    await bot.answerCallbackQuery(query.id, { text: 'Refreshed!' });
+
+    // Restart session dengan secret yang sama
+    await startOtpSession(userId, chatId, base32);
+
+    // Hapus pesan lama
+    try {
+      await bot.deleteMessage(chatId, msgId);
+    } catch (_) {}
   }
 
   await bot.answerCallbackQuery(query.id).catch(() => {});
