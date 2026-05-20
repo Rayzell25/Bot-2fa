@@ -113,14 +113,14 @@ function generateAddresses(n) {
 
 function formatAddress(addr, i) {
   return (
-    `<b>— Alamat ${i} —</b>\n` +
-    `Street   : <code>${addr.street}</code>\n` +
-    `City     : <code>${addr.city}</code>\n` +
-    `Province : <code>${addr.province}</code>\n` +
-    `Phone    : <code>${addr.phone}</code>\n` +
-    `Postal   : <code>${addr.postal}</code>\n` +
-    `Country  : <code>${addr.country}</code>\n` +
-    `Full     : <code>${addr.full}</code>`
+    `<b>#${i}</b>\n` +
+    `🏠 Jalan    : <code>${addr.street}</code>\n` +
+    `🏙 Kota     : <code>${addr.city}</code>\n` +
+    `🗺 Provinsi : <code>${addr.province}</code>\n` +
+    `📞 Telepon  : <code>${addr.phone}</code>\n` +
+    `📮 Kode Pos : <code>${addr.postal}</code>\n` +
+    `🌏 Negara   : <code>${addr.country}</code>\n` +
+    `📋 Lengkap  : <code>${addr.full}</code>`
   );
 }
 
@@ -183,8 +183,8 @@ function stopSession(userId) {
 
 const mainMenu = {
   inline_keyboard: [[
-    { text: '🔐 Generate 2FA',    callback_data: 'menu_2fa'     },
-    { text: '📍 Generate Alamat', callback_data: 'menu_address' },
+    { text: '🔐 Generate 2FA',      callback_data: 'menu_2fa'     },
+    { text: '📍 Random Address',   callback_data: 'menu_address' },
   ]],
 };
 
@@ -271,8 +271,7 @@ async function startOtpSession(userId, chatId, base32) {
       reply_markup: { inline_keyboard: [[
         { text: `⏱ ${secs}s`,       callback_data: `otp_refresh_${base32}` },
         { text: '← Kembali',        callback_data: 'otp_back' },
-      ]]},
-    }
+      ]]},    }
   );
 
   const timer = setInterval(async () => {
@@ -293,8 +292,8 @@ async function startOtpSession(userId, chatId, base32) {
             message_id   : msgId,
             parse_mode   : 'HTML',
             reply_markup : { inline_keyboard: [[
-              { text: '🔄 Refresh',  callback_data: `otp_refresh_${base32}` },
               { text: '← Kembali',  callback_data: 'otp_back' },
+              { text: '🔄 Refresh', callback_data: `otp_refresh_${base32}` },
             ]]},
           }
         );
@@ -313,8 +312,7 @@ async function startOtpSession(userId, chatId, base32) {
           reply_markup : { inline_keyboard: [[
             { text: `⏱ ${nowSecs}s`, callback_data: `otp_refresh_${base32}` },
             { text: '← Kembali',    callback_data: 'otp_back' },
-          ]]},
-        }
+          ]]},        }
       );
     } catch (e) {
       const em = e.message || '';
@@ -372,7 +370,7 @@ bot.on('callback_query', async (query) => {
     await bot.answerCallbackQuery(query.id);
     msgCache[userId] = msgId;
     await sendOrEdit(chatId, userId,
-      `📍 <b>Generate Alamat Indonesia</b>\n\nPilih jumlah alamat yang ingin di-generate.`,
+      `📍 <b>Random Address</b>\n\nPilih jumlah alamat yang ingin di-generate.`,
       {
         reply_markup: { inline_keyboard: [
           [
