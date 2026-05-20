@@ -113,14 +113,14 @@ function generateAddresses(n) {
 
 function formatAddress(addr, i) {
   return (
-    `<b>#${i}</b>\n` +
-    `🏠 Jalan    : <code>${addr.street}</code>\n` +
-    `🏙 Kota     : <code>${addr.city}</code>\n` +
-    `🗺 Provinsi : <code>${addr.province}</code>\n` +
-    `📞 Telepon  : <code>${addr.phone}</code>\n` +
-    `📮 Kode Pos : <code>${addr.postal}</code>\n` +
-    `🌏 Negara   : <code>${addr.country}</code>\n` +
-    `📋 Lengkap  : <code>${addr.full}</code>`
+    `<b>— #${i} —</b>\n` +
+    `Street   : <code>${addr.street}</code>\n` +
+    `City     : <code>${addr.city}</code>\n` +
+    `Province : <code>${addr.province}</code>\n` +
+    `Phone    : <code>${addr.phone}</code>\n` +
+    `Postal   : <code>${addr.postal}</code>\n` +
+    `Country  : <code>${addr.country}</code>\n` +
+    `Full     : <code>${addr.full}</code>`
   );
 }
 
