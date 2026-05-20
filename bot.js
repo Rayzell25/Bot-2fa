@@ -136,9 +136,8 @@ bot.onText(/\/start/, async (msg) => {
 
   if (!joined) {
     return bot.sendMessage(chatId,
-      `<b>Akses Terbatas</b>\n\n` +
-      `Halo ${name}, kamu perlu bergabung ke channel kami terlebih dahulu.\n\n` +
-      `📢 @RayzellStores`,
+      `To use this bot, you must join our channel first.\n\n` +
+      `👉 <a href="https://t.me/RayzellStores">t.me/RayzellStores</a>`,
       joinOpts
     );
   }
@@ -146,7 +145,7 @@ bot.onText(/\/start/, async (msg) => {
   stopSession(msg.from.id);
 
   return bot.sendMessage(chatId,
-    `👋 Hello!\n\nSend your <b>2FA Secret Key</b> to get a live OTP code.`,
+    `Hello, please enter your 2FA Secret.`,
     { parse_mode: 'HTML' }
   );
 });
@@ -174,12 +173,12 @@ bot.on('callback_query', async (query) => {
 
     try {
       await bot.editMessageText(
-        `👋 Hello!\n\nSend your <b>2FA Secret Key</b> to get a live OTP code.`,
+        `Hello, please enter your 2FA Secret.`,
         { chat_id: chatId, message_id: msgId, parse_mode: 'HTML' }
       );
     } catch (_) {
       await bot.sendMessage(chatId,
-        `👋 Hello!\n\nSend your <b>2FA Secret Key</b> to get a live OTP code.`,
+        `Hello, please enter your 2FA Secret.`,
         { parse_mode: 'HTML' }
       );
     }
@@ -202,7 +201,8 @@ bot.on('message', async (msg) => {
   // Force join check
   if (!(await hasJoined(userId))) {
     return bot.sendMessage(chatId,
-      `Kamu perlu join channel dulu.\n\n📢 @RayzellStores`,
+      `To use this bot, you must join our channel first.\n\n` +
+      `👉 <a href="https://t.me/RayzellStores">t.me/RayzellStores</a>`,
       joinOpts
     );
   }
