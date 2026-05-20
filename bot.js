@@ -36,22 +36,25 @@ function secondsLeft() {
   return 30 - (Math.floor(Date.now() / 1000) % 30);
 }
 
-// Bar animasi countdown  ▓▓▓▓▓▓░░░░  (10 blok)
+// Bar animasi countdown
 function timerBar(secs) {
   const total  = 30;
   const filled = Math.round((secs / total) * 10);
   const empty  = 10 - filled;
-  return '▓'.repeat(filled) + '░'.repeat(empty) + `  ${secs}s`;
+  // Hijau kalau masih banyak, kuning kalau mau habis
+  const bar = '█'.repeat(filled) + '░'.repeat(empty);
+  return `${bar}  ${secs}s`;
 }
 
 function buildOtpText(base32) {
   const otp  = getOTP(base32);
   const secs = secondsLeft();
   const bar  = timerBar(secs);
+  const icon = secs <= 5 ? '🔴' : secs <= 10 ? '🟡' : '🟢';
   return (
-    `Your OTP code\n\n` +
+    `🔐 <b>Your OTP Code</b>\n\n` +
     `<code>${otp}</code>\n\n` +
-    `<code>${bar}</code>`
+    `${icon} <code>${bar}</code>`
   );
 }
 
@@ -143,7 +146,7 @@ bot.onText(/\/start/, async (msg) => {
   stopSession(msg.from.id);
 
   return bot.sendMessage(chatId,
-    `Hello, please enter your 2FA Secret.`,
+    `👋 Hello!\n\nSend your <b>2FA Secret Key</b> to get a live OTP code.`,
     { parse_mode: 'HTML' }
   );
 });
@@ -171,12 +174,12 @@ bot.on('callback_query', async (query) => {
 
     try {
       await bot.editMessageText(
-        `Hello, please enter your 2FA Secret.`,
+        `👋 Hello!\n\nSend your <b>2FA Secret Key</b> to get a live OTP code.`,
         { chat_id: chatId, message_id: msgId, parse_mode: 'HTML' }
       );
     } catch (_) {
       await bot.sendMessage(chatId,
-        `Hello, please enter your 2FA Secret.`,
+        `👋 Hello!\n\nSend your <b>2FA Secret Key</b> to get a live OTP code.`,
         { parse_mode: 'HTML' }
       );
     }
@@ -208,7 +211,7 @@ bot.on('message', async (msg) => {
 
   if (!isValid2FASecret(input)) {
     return bot.sendMessage(chatId,
-      `<b>Invalid 2FA Secret.</b>\n\nPlease send a valid Base32 secret key.\n\n<i>Example: <code>JBSWY3DPEHPK3PXP</code></i>`,
+      `⚠️ <b>Invalid 2FA Secret.</b>\n\nMake sure you send a valid Base32 secret key.\n\n<i>Example: <code>JBSWY3DPEHPK3PXP</code></i>`,
       { parse_mode: 'HTML' }
     );
   }
