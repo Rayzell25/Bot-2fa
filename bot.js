@@ -7,9 +7,26 @@ const OWNER_ID     = parseInt(process.env.OWNER_ID || '1334793299');
 const BOT_USERNAME = process.env.BOT_USERNAME  || 'auotorderbot';
 const CHANNEL      = process.env.CHANNEL       || '@RayzellStores';
 
-const bot = new TelegramBot(BOT_TOKEN, {
-  polling: { interval: 300, autoStart: true, params: { timeout: 10 } },
-});
+// ─────────────────────────────────────────
+//   WEBHOOK / POLLING (auto-detect)
+// ─────────────────────────────────────────
+const WEBHOOK_URL  = process.env.WEBHOOK_URL  || '';
+const WEBHOOK_PORT = parseInt(process.env.WEBHOOK_PORT || '8443');
+
+let bot;
+if (WEBHOOK_URL) {
+  // WEBHOOK mode — respon instan, direkomendasikan di VPS
+  bot = new TelegramBot(BOT_TOKEN, { webHook: { port: WEBHOOK_PORT } });
+  bot.setWebHook(`${WEBHOOK_URL}/bot${BOT_TOKEN}`)
+    .then(() => console.log(`  Webhook aktif : ${WEBHOOK_URL}/bot${BOT_TOKEN}`))
+    .catch(err => console.error('  Webhook error:', err.message));
+} else {
+  // POLLING mode — fallback jika WEBHOOK_URL tidak diset
+  bot = new TelegramBot(BOT_TOKEN, {
+    polling: { interval: 300, autoStart: true, params: { timeout: 10 } },
+  });
+  console.log('  Mode          : polling (set WEBHOOK_URL untuk webhook)');
+}
 
 // ─────────────────────────────────────────
 //   DATA ALAMAT INDONESIA (real)
