@@ -58,7 +58,7 @@ function buildOtpText(base32) {
   const icon = secs <= 5 ? '🔴' : secs <= 10 ? '🟡' : '🟢';
   return (
     `🔐 <b>Your OTP Code</b>\n\n` +
-    `<code>${otp}</code>\n\n` +
+    `<b>${otp}</b>\n\n` +
     `${icon} <code>${bar}</code>`
   );
 }
