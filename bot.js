@@ -1,7 +1,6 @@
 require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const { TOTP, Secret } = require('otpauth');
-const QRCode = require('qrcode');
 
 // ─────────────────────────────────────────
 //   CONFIG
@@ -162,46 +161,7 @@ bot.on('callback_query', async (query) => {
     );
   }
 
-  // ── gen_new ──
-  if (data === 'gen_new') {
-    await bot.answerCallbackQuery(query.id);
-    const { base32, otp } = generateSecret();
-    const now = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
-    return bot.sendMessage(chatId,
-      `<b>Secret Key Baru</b>\n\n` +
-      `<code>${base32}</code>\n\n` +
-      `OTP saat ini\n` +
-      `<code>${otp}</code>\n\n` +
-      `<i>SHA1 · 6 digit · 30 detik · ${now} WIB</i>`,
-      {
-        parse_mode: 'HTML',
-        reply_markup: { inline_keyboard: [[
-          { text: 'Generate Lagi', callback_data: 'gen_new' },
-          { text: 'QR Code',       callback_data: `qr_${base32}` },
-        ]]},
-      }
-    );
-  }
-
-  // ── qr_<secret> ──
-  if (data.startsWith('qr_')) {
-    const secret = data.slice(3);
-    await bot.answerCallbackQuery(query.id);
-    try {
-      const totp = new TOTP({
-        issuer: 'RayzellStores', label: 'MyAccount',
-        algorithm: 'SHA1', digits: 6, period: 30,
-        secret: Secret.fromBase32(secret),
-      });
-      const qrBuffer = await QRCode.toBuffer(totp.toString(), { width: 280, margin: 2 });
-      return bot.sendPhoto(chatId, qrBuffer, {
-        caption: `<b>QR Code</b>\n\n<code>${secret}</code>\n\nScan dengan Google Authenticator atau Authy.`,
-        parse_mode: 'HTML',
-      });
-    } catch {
-      return bot.sendMessage(chatId, 'Gagal membuat QR Code.', { parse_mode: 'HTML' });
-    }
-  }
+  // ── gen_new / qr — tidak dipakai lagi, abaikan ──
 
   await bot.answerCallbackQuery(query.id);
 });
@@ -225,20 +185,13 @@ bot.on('message', async (msg) => {
   // ── Generate Secret ──
   if (text === '🔐 Generate Secret') {
     const { base32, otp } = generateSecret();
-    const now = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
     return bot.sendMessage(chatId,
-      `<b>Secret Key Baru</b>\n\n` +
+      `<b>Secret Key</b>\n` +
       `<code>${base32}</code>\n\n` +
-      `OTP saat ini\n` +
+      `<b>OTP sekarang</b>\n` +
       `<code>${otp}</code>\n\n` +
-      `<i>SHA1 · 6 digit · 30 detik · ${now} WIB</i>`,
-      {
-        parse_mode: 'HTML',
-        reply_markup: { inline_keyboard: [[
-          { text: 'Generate Lagi', callback_data: 'gen_new' },
-          { text: 'QR Code',       callback_data: `qr_${base32}` },
-        ]]},
-      }
+      `<i>Masukkan Secret Key ke Google Authenticator atau Authy kamu.</i>`,
+      { parse_mode: 'HTML' }
     );
   }
 
