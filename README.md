@@ -2,7 +2,7 @@
 
 # 🔐 Telegram 2FA Secret Bot
 
-### Bot Telegram untuk generate & validasi 2FA Secret secara real-time
+### Bot Telegram untuk generate & cek 2FA Secret secara real-time
 
 [![Node.js](https://img.shields.io/badge/Node.js-18%2B-brightgreen?style=for-the-badge&logo=node.js)](https://nodejs.org)
 [![Telegram](https://img.shields.io/badge/Telegram-Bot-blue?style=for-the-badge&logo=telegram)](https://t.me/RayzellStores)
@@ -16,11 +16,42 @@
 
 ## ✨ Fitur
 
-- 🔒 **Force Join Channel** — user wajib join sebelum bisa pakai bot
-- 🔐 **Live OTP** — kode OTP real-time dengan countdown bar yang auto-update
-- ⏱️ **Auto Refresh** — OTP & timer di-edit otomatis tiap 2 detik, tanpa kirim pesan baru
-- ✅ **Validasi Secret** — langsung detect kalau secret tidak valid
+- 🔒 **Force Join Channel** — user wajib join channel sebelum bisa pakai bot
+- 🔐 **Live OTP** — kode OTP real-time dengan countdown langsung di tombol
+- 🔄 **Tombol Refresh** — muncul otomatis saat OTP expired, klik untuk dapat kode baru
+- ⛔ **Validasi Secret** — kirim bukan Base32? langsung balas `Error: This is not 2FA Secret !`
 - ⚡ **Respon cepat** — polling interval 300ms
+
+---
+
+## 📱 Cara Kerja Bot
+
+1. `/start` → kalau belum join channel, disuruh join dulu
+2. Kalau sudah join → bot balas: `Hello, please enter your 2FA Secret.`
+3. Kirim secret key → bot balas OTP dengan countdown:
+
+```
+🔐 2FA Code: 917034
+🟢 Status: Active
+
+██████████  28s
+
+[ ⏱ 28s ]
+```
+
+4. Countdown berjalan otomatis. Saat expired, tampilan berubah:
+
+```
+🔐 2FA Code: 917034
+⏳ Status: Expired
+
+Tap Refresh to get a new OTP.
+
+[ 🔄 Refresh ]
+```
+
+5. Klik **Refresh** → OTP baru langsung muncul
+6. Klik **Refresh sebelum expired** → ditolak, tampil notif "OTP masih aktif. Tunggu X detik."
 
 ---
 
@@ -64,6 +95,13 @@ Verifikasi:
 node -v   # harus v18.x.x
 npm -v    # harus v8.x.x atau lebih
 ```
+
+> ❌ Kalau masih versi lama:
+> ```bash
+> apt remove -y nodejs && apt autoremove -y
+> curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
+> apt install -y nodejs
+> ```
 
 ---
 
@@ -151,7 +189,7 @@ Tekan **CTRL+C**, lalu lanjut ke STEP 9.
 
 ---
 
-### STEP 9 — Jalankan dengan PM2
+### STEP 9 — Jalankan dengan PM2 (Permanent)
 
 ```bash
 pm2 start bot.js --name "2fa-bot"
@@ -165,6 +203,14 @@ Cek status:
 pm2 status
 pm2 logs 2fa-bot
 ```
+
+---
+
+### STEP 10 — Verifikasi
+
+1. Buka Telegram → cari username bot
+2. Ketik `/start`
+3. Kalau muncul `Hello, please enter your 2FA Secret.` → **✅ Bot berhasil!**
 
 ---
 
@@ -198,7 +244,8 @@ pm2 monit               # monitor real-time
 | `node: command not found` | Install ulang Node.js 18 dari NodeSource |
 | Bot tidak cek member | Pastikan bot sudah jadi **admin** di channel |
 | OTP tidak muncul | `pm2 restart 2fa-bot` |
-| Bot mati setelah terminal tutup | Jalankan `pm2 startup` + `pm2 save` |
+| Bot mati setelah terminal tutup | Jalankan `pm2 startup` lalu `pm2 save` |
+| Semua user dianggap belum join | Bot belum dijadikan admin channel |
 
 ---
 
