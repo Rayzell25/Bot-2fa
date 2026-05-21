@@ -26,10 +26,17 @@ if (WEBHOOK_URL) {
     .catch(err => console.error('  Webhook error:', err.message));
 } else {
   // POLLING mode — fallback jika WEBHOOK_URL tidak diset
+  // Long polling — interval 0 + timeout 60 detik = respon hampir instan
   bot = new TelegramBot(BOT_TOKEN, {
-    polling: { interval: 300, autoStart: true, params: { timeout: 10 } },
+    polling: {
+      interval: 0,
+      autoStart: true,
+      params: {
+        timeout: 60,
+        allowed_updates: ['message', 'callback_query'],
+      },
+    },
   });
-  console.log('  Mode          : polling (set WEBHOOK_URL untuk webhook)');
 }
 
 // ─────────────────────────────────────────
