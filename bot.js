@@ -257,9 +257,15 @@ async function sendOrEdit(chatId, userId, text, opts = {}) {
         ...opts,
       });
       return mid;
-    } catch (_) {}
+    } catch (err) {
+      const em = err.message || '';
+      // "message is not modified" bukan error sungguhan — konten sama, skip saja
+      if (em.includes('message is not modified')) return mid;
+      // Error lain (deleted, invalid) → hapus cache lama, kirim pesan baru di bawah
+      delete msgCache[userId];
+    }
   }
-  // Kirim baru kalau belum ada atau gagal edit
+  // Kirim pesan baru (pertama kali atau setelah cache invalid)
   const sent = await bot.sendMessage(chatId, text, { parse_mode: 'HTML', ...opts });
   msgCache[userId] = sent.message_id;
   return sent.message_id;
@@ -538,6 +544,14 @@ bot.on('message', async (msg) => {
   const userId = msg.from.id;
   const text   = msg.text.trim();
 
+  // ── Debounce pesan: abaikan kalau kirim < 500ms dari pesan sebelumnya ──
+  const nowMsg = Date.now();
+  if (cbDebounce[`msg_${userId}`] && (nowMsg - cbDebounce[`msg_${userId}`]) < 500) {
+    try { await bot.deleteMessage(chatId, msg.message_id); } catch (_) {}
+    return;
+  }
+  cbDebounce[`msg_${userId}`] = nowMsg;
+
   if (!(await hasJoined(userId))) {
     return bot.sendMessage(chatId,
       `Untuk menggunakan bot ini, kamu harus join channel kami dulu.`,
@@ -615,10 +629,12 @@ bot.on('message', async (msg) => {
   if (userState[userId] === 'awaiting_2fa') {
     const input = text.toUpperCase().replace(/\s+/g, '');
     if (!isValid2FASecret(input)) {
-      await sendOrEdit(chatId, userId,
-        `Error: This is not 2FA Secret !\n\n<i>Coba lagi atau kembali ke menu.</i>`,
-        { reply_markup: { inline_keyboard: [[{ text: '← Kembali', callback_data: 'back_main' }]] } }
+      // Tetap di state awaiting_2fa supaya user bisa coba lagi
+      const newMid = await sendOrEdit(chatId, userId,
+        `❌ <b>Secret tidak valid!</b>\n\nFormat harus Base32 (huruf A-Z dan angka 2-7), minimal 16 karakter.\n\n<i>Contoh yang benar: <code>JBSWY3DPEHPK3PXP</code></i>\n\nKirim ulang secret kamu, atau kembali ke menu.`,
+        { reply_markup: { inline_keyboard: [[{ text: '← Kembali ke Menu', callback_data: 'back_main' }]] } }
       );
+      msgCache[userId] = newMid;
       return;
     }
     delete userState[userId];
