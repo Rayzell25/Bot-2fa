@@ -312,6 +312,8 @@ async function editMsgWithEmoji(chatId, messageId, text, cePositions, opts = {})
 
 // ─────────────────────────────────────────
 //   SEND / EDIT helper (1 pesan saja)
+//   ATURAN GLOBAL: semua output bot harus lewat sini.
+//   sendMessage HANYA boleh dipanggil jika msgCache kosong.
 // ─────────────────────────────────────────
 
 async function sendOrEdit(chatId, userId, text, opts = {}) {
@@ -327,19 +329,19 @@ async function sendOrEdit(chatId, userId, text, opts = {}) {
       return mid;
     } catch (err) {
       const em = err.message || '';
-      // Konten sama persis → bukan error, abaikan
+      // Konten sama persis → bukan error, abaikan, kembalikan mid yang ada
       if (em.includes('message is not modified')) return mid;
       // Pesan sudah dihapus / tidak bisa diedit → hapus cache, kirim baru
-      // Tapi HANYA kalau memang pesan tidak ada lagi
       if (
         em.includes('message to edit not found') ||
         em.includes('MESSAGE_ID_INVALID') ||
-        em.includes("message can't be edited")
+        em.includes("message can't be edited") ||
+        em.includes('Bad Request')
       ) {
         delete msgCache[userId];
         // jatuh ke sendMessage di bawah
       } else {
-        // Error lain (rate limit dll) → tetap pakai mid yang ada, jangan kirim baru
+        // Error lain (rate limit, network) → jangan kirim baru, return mid
         return mid;
       }
     }
@@ -631,29 +633,31 @@ bot.on('message', async (msg) => {
   const userId = msg.from.id;
   const text   = msg.text.trim();
 
-  // ── Debounce pesan: abaikan kalau kirim < 500ms dari pesan sebelumnya ──
+  // ── Debounce pesan: abaikan kalau kirim < 800ms dari pesan sebelumnya ──
+  // Naikkan ke 800ms supaya spam paste 5x sekaligus tetap hanya proses 1
   const nowMsg = Date.now();
-  if (cbDebounce[`msg_${userId}`] && (nowMsg - cbDebounce[`msg_${userId}`]) < 500) {
+  if (cbDebounce[`msg_${userId}`] && (nowMsg - cbDebounce[`msg_${userId}`]) < 800) {
     try { await bot.deleteMessage(chatId, msg.message_id); } catch (_) {}
     return;
   }
   cbDebounce[`msg_${userId}`] = nowMsg;
 
+  // Hapus pesan user biar chat tetap rapi (sebelum cek join supaya pesan user hilang)
+  try { await bot.deleteMessage(chatId, msg.message_id); } catch (_) {}
+
   if (!(await hasJoined(userId))) {
-    return bot.sendMessage(chatId,
+    // Pakai sendOrEdit supaya tetap 1-message UI
+    await sendOrEdit(chatId, userId,
       `Untuk menggunakan bot ini, kamu harus join channel kami dulu.`,
       joinOpts
     );
+    return;
   }
-
-  // Hapus pesan user biar chat tetap rapi
-  try { await bot.deleteMessage(chatId, msg.message_id); } catch (_) {}
 
   // ── State: awaiting_ip ──
   if (userState[userId] === 'awaiting_ip') {
     delete userState[userId];
     const query = text.trim();
-    // Reset state dulu biar tidak nyangkut
 
     await sendOrEdit(chatId, userId,
       `🌐 <b>Mengecek...</b> <code>${query}</code>`,
@@ -661,7 +665,6 @@ bot.on('message', async (msg) => {
     );
 
     try {
-      // Kalau domain, resolve dulu ke IP pakai ip-api
       const res = await axios.get(`http://ip-api.com/json/${encodeURIComponent(query)}?fields=status,message,country,countryCode,regionName,city,zip,lat,lon,timezone,isp,org,as,query`, {
         timeout: 8000,
       });
@@ -675,7 +678,6 @@ bot.on('message', async (msg) => {
         return;
       }
 
-      // Flag emoji dari country code
       const flag = d.countryCode
         ? d.countryCode.toUpperCase().replace(/./g, c => String.fromCodePoint(0x1F1E6 - 65 + c.charCodeAt(0)))
         : '';
@@ -716,32 +718,12 @@ bot.on('message', async (msg) => {
   if (userState[userId] === 'awaiting_2fa') {
     const input = text.toUpperCase().replace(/\s+/g, '');
     if (!isValid2FASecret(input)) {
-      // Tetap di state awaiting_2fa supaya user bisa coba lagi
-      // Gunakan editMessageText langsung ke msgCache agar TIDAK pernah kirim pesan baru
-      const errText  = `❌ <b>Secret tidak valid!</b>\n\nFormat harus Base32 (huruf A-Z dan angka 2-7), minimal 16 karakter.\n\n<i>Contoh: <code>JBSWY3DPEHPK3PXP</code></i>\n\nKirim ulang, atau kembali ke menu.`;
-      const errMarkup = { inline_keyboard: [[{ text: '← Kembali ke Menu', callback_data: 'back_main' }]] };
-      const existingMid = msgCache[userId];
-      if (existingMid) {
-        try {
-          await bot.editMessageText(errText, {
-            chat_id      : chatId,
-            message_id   : existingMid,
-            parse_mode   : 'HTML',
-            reply_markup : errMarkup,
-          });
-        } catch (e) {
-          // "message is not modified" — abaikan (konten sama)
-          // Error lain (pesan dihapus) → kirim baru sekali lalu simpan
-          if (!e.message?.includes('message is not modified')) {
-            const sent = await bot.sendMessage(chatId, errText, { parse_mode: 'HTML', reply_markup: errMarkup });
-            msgCache[userId] = sent.message_id;
-          }
-        }
-      } else {
-        // Belum ada msgCache sama sekali → kirim baru sekali, simpan ID
-        const sent = await bot.sendMessage(chatId, errText, { parse_mode: 'HTML', reply_markup: errMarkup });
-        msgCache[userId] = sent.message_id;
-      }
+      // Tetap di state awaiting_2fa — user bisa coba lagi
+      // SELALU pakai sendOrEdit() — tidak boleh ada sendMessage baru di sini
+      await sendOrEdit(chatId, userId,
+        `❌ <b>Secret tidak valid!</b>\n\nFormat harus Base32 (huruf A-Z dan angka 2-7), minimal 16 karakter.\n\n<i>Contoh: <code>JBSWY3DPEHPK3PXP</code></i>\n\nKirim ulang, atau kembali ke menu.`,
+        { reply_markup: { inline_keyboard: [[{ text: '← Kembali ke Menu', callback_data: 'back_main' }]] } }
+      );
       return;
     }
     delete userState[userId];
