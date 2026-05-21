@@ -196,8 +196,9 @@ async function hasJoined(userId) {
 //   SESSIONS
 // ─────────────────────────────────────────
 
-const sessions = {}; // OTP sessions
-const msgCache = {}; // userId → msgId (pesan utama, untuk di-edit)
+const sessions   = {}; // OTP sessions
+const msgCache   = {}; // userId → msgId (pesan utama, untuk di-edit)
+const userState  = {}; // userId → state string ('awaiting_ip', dll)
 
 function stopSession(userId) {
   if (sessions[userId]) {
@@ -389,6 +390,8 @@ bot.on('callback_query', async (query) => {
     await bot.answerCallbackQuery(query.id);
     msgCache[userId] = msgId;
     stopSession(userId);
+    delete userState[userId]; // reset state
+    userState[userId] = 'awaiting_2fa'; // set state 2FA
     await sendOrEdit(chatId, userId,
       `🔐 <b>Generate 2FA</b>\n\nKirim secret key 2FA kamu (Base32).\n\n<i>Contoh: <code>JBSWY3DPEHPK3PXP</code></i>`,
       { reply_markup: { inline_keyboard: [[{ text: '← Kembali', callback_data: 'back_main' }]] } }
@@ -504,10 +507,8 @@ bot.on('callback_query', async (query) => {
 });
 
 // ─────────────────────────────────────────
-//   MESSAGE — terima secret 2FA
+//   MESSAGE — terima secret 2FA / IP lookup
 // ─────────────────────────────────────────
-
-const userState = {};
 
 bot.on('message', async (msg) => {
   if (!msg.text || msg.text.startsWith('/')) return;
@@ -530,6 +531,7 @@ bot.on('message', async (msg) => {
   if (userState[userId] === 'awaiting_ip') {
     delete userState[userId];
     const query = text.trim();
+    // Reset state dulu biar tidak nyangkut
 
     await sendOrEdit(chatId, userId,
       `🌐 <b>Mengecek...</b> <code>${query}</code>`,
@@ -588,17 +590,23 @@ bot.on('message', async (msg) => {
     return;
   }
 
-  const input = text.toUpperCase().replace(/\s+/g, '');
-
-  if (!isValid2FASecret(input)) {
-    await sendOrEdit(chatId, userId,
-      `Error: This is not 2FA Secret !\n\n<i>Kembali ke menu?</i>`,
-      { reply_markup: { inline_keyboard: [[{ text: '← Kembali', callback_data: 'back_main' }]] } }
-    );
+  // ── State: awaiting_2fa ──
+  if (userState[userId] === 'awaiting_2fa') {
+    const input = text.toUpperCase().replace(/\s+/g, '');
+    if (!isValid2FASecret(input)) {
+      await sendOrEdit(chatId, userId,
+        `Error: This is not 2FA Secret !\n\n<i>Coba lagi atau kembali ke menu.</i>`,
+        { reply_markup: { inline_keyboard: [[{ text: '← Kembali', callback_data: 'back_main' }]] } }
+      );
+      return;
+    }
+    delete userState[userId];
+    await startOtpSession(userId, chatId, input);
     return;
   }
 
-  await startOtpSession(userId, chatId, input);
+  // ── Tidak ada state — abaikan input random ──
+  // User kirim teks tanpa klik menu apapun — tidak diproses
 });
 
 // ─────────────────────────────────────────
