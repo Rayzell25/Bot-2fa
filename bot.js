@@ -184,12 +184,23 @@ function timerBar(secs) {
   return '█'.repeat(filled) + '░'.repeat(empty) + `  ${secs}s`;
 }
 
+// ── hasJoined cache: 5 menit per user ──
+const joinCache = {}; // userId → { result, ts }
+const JOIN_CACHE_TTL = 5 * 60 * 1000; // 5 menit
+
 async function hasJoined(userId) {
+  const now = Date.now();
+  const cached = joinCache[userId];
+  if (cached && (now - cached.ts) < JOIN_CACHE_TTL) return cached.result;
   try {
     const m = await bot.getChatMember(CHANNEL, userId);
-    if (m.status === 'kicked' || m.status === 'left') return false;
+    const result = !(m.status === 'kicked' || m.status === 'left');
+    joinCache[userId] = { result, ts: now };
+    return result;
+  } catch {
+    joinCache[userId] = { result: true, ts: now };
     return true;
-  } catch { return true; }
+  }
 }
 
 // ─────────────────────────────────────────
@@ -199,6 +210,7 @@ async function hasJoined(userId) {
 const sessions   = {}; // OTP sessions
 const msgCache   = {}; // userId → msgId (pesan utama, untuk di-edit)
 const userState  = {}; // userId → state string ('awaiting_ip', dll)
+const cbDebounce = {}; // userId → timestamp last callback (debounce)
 
 function stopSession(userId) {
   if (sessions[userId]) {
@@ -285,7 +297,10 @@ bot.onText(/\/start/, async (msg) => {
 // ─────────────────────────────────────────
 
 async function startOtpSession(userId, chatId, base32) {
+  // Hentikan & bersihkan session lama DULU sebelum buat baru
   stopSession(userId);
+  // Tandai session sedang dibuat untuk cegah double-call saat spam Refresh
+  sessions[userId] = { secret: base32, chatId, msgId: null, timer: null, starting: true };
 
   let otp;
   try { otp = getOTP(base32); }
@@ -368,15 +383,25 @@ bot.on('callback_query', async (query) => {
   const name   = query.from.first_name || 'Pengguna';
   const data   = query.data || '';
 
+  // ── Debounce: abaikan klik dalam 300ms dari klik terakhir ──
+  const now = Date.now();
+  if (cbDebounce[userId] && (now - cbDebounce[userId]) < 300) {
+    return bot.answerCallbackQuery(query.id).catch(() => {});
+  }
+  cbDebounce[userId] = now;
+
+  // ── answerCallbackQuery PALING AWAL (hilangkan loading spinner segera) ──
+  // Untuk check_join dan otp_refresh kita answer nanti dengan teks khusus,
+  // tapi tetap answer segera dengan empty dulu agar tidak pending.
+  const earlyAnswer = (text, alert) => bot.answerCallbackQuery(query.id, text !== undefined ? { text, show_alert: !!alert } : {}).catch(() => {});
+
   // ── check_join ──
   if (data === 'check_join') {
     const joined = await hasJoined(userId);
     if (!joined) {
-      return bot.answerCallbackQuery(query.id, {
-        text: 'Kamu belum join. Silakan join channel dulu.', show_alert: true,
-      });
+      return earlyAnswer('Kamu belum join. Silakan join channel dulu.', true);
     }
-    await bot.answerCallbackQuery(query.id, { text: 'Berhasil! Selamat datang.' });
+    await earlyAnswer('Berhasil! Selamat datang.');
     msgCache[userId] = msgId;
     await sendOrEdit(chatId, userId,
       `Halo, <b>${name}</b>! Pilih fitur di bawah.`,
@@ -385,13 +410,15 @@ bot.on('callback_query', async (query) => {
     return;
   }
 
+  // Untuk semua selain check_join: answer segera sekarang
+  await earlyAnswer();
+
   // ── menu_2fa ──
   if (data === 'menu_2fa') {
-    await bot.answerCallbackQuery(query.id);
     msgCache[userId] = msgId;
     stopSession(userId);
-    delete userState[userId]; // reset state
-    userState[userId] = 'awaiting_2fa'; // set state 2FA
+    delete userState[userId];
+    userState[userId] = 'awaiting_2fa';
     await sendOrEdit(chatId, userId,
       `🔐 <b>Generate 2FA</b>\n\nKirim secret key 2FA kamu (Base32).\n\n<i>Contoh: <code>JBSWY3DPEHPK3PXP</code></i>`,
       { reply_markup: { inline_keyboard: [[{ text: '← Kembali', callback_data: 'back_main' }]] } }
@@ -401,7 +428,6 @@ bot.on('callback_query', async (query) => {
 
   // ── menu_address ──
   if (data === 'menu_address') {
-    await bot.answerCallbackQuery(query.id);
     msgCache[userId] = msgId;
     await sendOrEdit(chatId, userId,
       `📍 <b>Random Address</b>\n\nPilih jumlah alamat yang ingin di-generate.`,
@@ -431,8 +457,7 @@ bot.on('callback_query', async (query) => {
   // ── addr_N ──
   if (data.startsWith('addr_')) {
     const n    = parseInt(data.replace('addr_', ''));
-    const last = data; // simpan untuk tombol Generate Baru
-    await bot.answerCallbackQuery(query.id);
+    const last = data;
     msgCache[userId] = msgId;
 
     const addrs = generateAddresses(n);
@@ -440,7 +465,7 @@ bot.on('callback_query', async (query) => {
 
     await sendOrEdit(chatId, userId, text, {
       reply_markup: { inline_keyboard: [[
-        { text: '← Kembali',      callback_data: 'menu_address' },
+        { text: '← Kembali',        callback_data: 'menu_address' },
         { text: '🔄 Generate Baru', callback_data: last },
       ]]},
     });
@@ -449,7 +474,6 @@ bot.on('callback_query', async (query) => {
 
   // ── back_main ──
   if (data === 'back_main') {
-    await bot.answerCallbackQuery(query.id);
     msgCache[userId] = msgId;
     stopSession(userId);
     delete userState[userId];
@@ -462,7 +486,6 @@ bot.on('callback_query', async (query) => {
 
   // ── otp_back ──
   if (data === 'otp_back') {
-    await bot.answerCallbackQuery(query.id);
     stopSession(userId);
     msgCache[userId] = msgId;
     await sendOrEdit(chatId, userId,
@@ -477,15 +500,16 @@ bot.on('callback_query', async (query) => {
     const base32 = data.slice(12);
     const sess   = sessions[userId];
 
-    // Timer masih jalan = belum expired
-    if (sess && sess.timer !== null) {
+    // Timer masih jalan ATAU session sedang diinisialisasi = tolak spam
+    if (sess && (sess.timer !== null || sess.starting)) {
       const secs = secondsLeft();
-      return bot.answerCallbackQuery(query.id, {
+      // Kirim alert tanpa await agar tidak block
+      bot.answerCallbackQuery(query.id, {
         text: `OTP masih aktif. Tunggu ${secs} detik lagi.`, show_alert: false,
-      });
+      }).catch(() => {});
+      return;
     }
 
-    await bot.answerCallbackQuery(query.id, { text: 'Refreshed!' });
     msgCache[userId] = msgId;
     await startOtpSession(userId, chatId, base32);
     return;
@@ -493,7 +517,6 @@ bot.on('callback_query', async (query) => {
 
   // ── menu_ip ──
   if (data === 'menu_ip') {
-    await bot.answerCallbackQuery(query.id);
     msgCache[userId] = msgId;
     await sendOrEdit(chatId, userId,
       `🌐 <b>Cek IP / ISP</b>\n\nKirim IP address atau domain yang ingin dicek.\n\n<i>Contoh:</i>\n<code>178.128.98.106</code>\n<code>google.com</code>`,
@@ -502,8 +525,6 @@ bot.on('callback_query', async (query) => {
     userState[userId] = 'awaiting_ip';
     return;
   }
-
-  await bot.answerCallbackQuery(query.id).catch(() => {});
 });
 
 // ─────────────────────────────────────────
