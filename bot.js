@@ -3,6 +3,7 @@ if (!process.env.BOT_TOKEN) require('dotenv').config();
 
 const TelegramBot = require('node-telegram-bot-api');
 const { TOTP, Secret } = require('otpauth');
+const axios = require('axios');
 
 const BOT_TOKEN    = process.env.BOT_TOKEN    || '8643566619:AAHy98hpFwLsjHZwTl5XogtgoY60mNzsh9A';
 const OWNER_ID     = parseInt(process.env.OWNER_ID || '1334793299');
@@ -211,8 +212,10 @@ function stopSession(userId) {
 
 const mainMenu = {
   inline_keyboard: [[
-    { text: '🔐 Generate 2FA',      callback_data: 'menu_2fa'     },
-    { text: '📍 Random Address',   callback_data: 'menu_address' },
+    { text: '🔐 Generate 2FA',    callback_data: 'menu_2fa'     },
+    { text: '📍 Random Address',  callback_data: 'menu_address' },
+  ],[
+    { text: '🌐 Cek IP / ISP',    callback_data: 'menu_ip'      },
   ]],
 };
 
@@ -446,6 +449,7 @@ bot.on('callback_query', async (query) => {
     await bot.answerCallbackQuery(query.id);
     msgCache[userId] = msgId;
     stopSession(userId);
+    delete userState[userId];
     await sendOrEdit(chatId, userId,
       `Halo, <b>${name}</b>! Pilih fitur di bawah.`,
       { reply_markup: mainMenu }
@@ -484,12 +488,26 @@ bot.on('callback_query', async (query) => {
     return;
   }
 
+  // ── menu_ip ──
+  if (data === 'menu_ip') {
+    await bot.answerCallbackQuery(query.id);
+    msgCache[userId] = msgId;
+    await sendOrEdit(chatId, userId,
+      `🌐 <b>Cek IP / ISP</b>\n\nKirim IP address atau domain yang ingin dicek.\n\n<i>Contoh:</i>\n<code>178.128.98.106</code>\n<code>google.com</code>`,
+      { reply_markup: { inline_keyboard: [[{ text: '← Kembali', callback_data: 'back_main' }]] } }
+    );
+    userState[userId] = 'awaiting_ip';
+    return;
+  }
+
   await bot.answerCallbackQuery(query.id).catch(() => {});
 });
 
 // ─────────────────────────────────────────
 //   MESSAGE — terima secret 2FA
 // ─────────────────────────────────────────
+
+const userState = {};
 
 bot.on('message', async (msg) => {
   if (!msg.text || msg.text.startsWith('/')) return;
@@ -505,8 +523,70 @@ bot.on('message', async (msg) => {
     );
   }
 
-  // Hapus pesan user biar chat tetap rapi (opsional, bisa di-comment kalau error)
+  // Hapus pesan user biar chat tetap rapi
   try { await bot.deleteMessage(chatId, msg.message_id); } catch (_) {}
+
+  // ── State: awaiting_ip ──
+  if (userState[userId] === 'awaiting_ip') {
+    delete userState[userId];
+    const query = text.trim();
+
+    await sendOrEdit(chatId, userId,
+      `🌐 <b>Mengecek...</b> <code>${query}</code>`,
+      { reply_markup: { inline_keyboard: [[{ text: '← Kembali', callback_data: 'back_main' }]] } }
+    );
+
+    try {
+      // Kalau domain, resolve dulu ke IP pakai ip-api
+      const res = await axios.get(`http://ip-api.com/json/${encodeURIComponent(query)}?fields=status,message,country,countryCode,regionName,city,zip,lat,lon,timezone,isp,org,as,query`, {
+        timeout: 8000,
+      });
+      const d = res.data;
+
+      if (d.status === 'fail') {
+        await sendOrEdit(chatId, userId,
+          `❌ <b>Gagal mengecek:</b> <code>${query}</code>\n\n<i>${d.message || 'IP/domain tidak valid.'}</i>`,
+          { reply_markup: { inline_keyboard: [[{ text: '← Kembali', callback_data: 'back_main' }]] } }
+        );
+        return;
+      }
+
+      // Flag emoji dari country code
+      const flag = d.countryCode
+        ? d.countryCode.toUpperCase().replace(/./g, c => String.fromCodePoint(0x1F1E6 - 65 + c.charCodeAt(0)))
+        : '';
+
+      const mapsUrl = `https://www.google.com/maps?q=${d.lat},${d.lon}`;
+
+      const result =
+        `<b>IP Lookup Result</b>\n\n` +
+        `Public IP   : <code>${d.query}</code>\n` +
+        `ISP         : <code>${d.isp}</code>\n` +
+        `Org         : <code>${d.org}</code>\n` +
+        `ASN         : <code>${d.as}</code>\n` +
+        `Country     : <code>${d.country} ${flag} (${d.countryCode})</code>\n` +
+        `City        : <code>${d.city}</code>\n` +
+        `Region      : <code>${d.regionName}</code>\n` +
+        `Coordinates : <code>${d.lat}, ${d.lon}</code>\n` +
+        `Timezone    : <code>${d.timezone}</code>\n` +
+        `ZIP/Code    : <code>${d.zip || '-'}</code>\n\n` +
+        `🌍 <a href="${mapsUrl}">Lihat di Google Maps</a>`;
+
+      await sendOrEdit(chatId, userId, result, {
+        reply_markup: { inline_keyboard: [[
+          { text: '🔄 Cek Lagi',  callback_data: 'menu_ip'   },
+          { text: '← Kembali',   callback_data: 'back_main' },
+        ]]},
+        disable_web_page_preview: true,
+      });
+    } catch (err) {
+      await sendOrEdit(chatId, userId,
+        `❌ <b>Error:</b> Gagal menghubungi server. Coba lagi.\n\n<i>${err.message}</i>`,
+        { reply_markup: { inline_keyboard: [[{ text: '← Kembali', callback_data: 'back_main' }]] } }
+      );
+    }
+    return;
+  }
 
   const input = text.toUpperCase().replace(/\s+/g, '');
 
