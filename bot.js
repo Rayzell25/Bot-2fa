@@ -243,6 +243,74 @@ const joinOpts = {
 };
 
 // ─────────────────────────────────────────
+//   CUSTOM EMOJI HELPER
+// ─────────────────────────────────────────
+
+// Custom Emoji ID milik owner — dipasang sebagai dekorasi di teks pesan
+const CE_ID   = '5318986077455795572'; // custom emoji ID
+const CE_CHAR = '⭐';                   // placeholder emoji (1 karakter, length=2 UTF-16)
+
+// Hitung byte-offset UTF-16 dari sebuah string sampai indeks karakter ke-n
+function utf16Offset(str, charIndex) {
+  let offset = 0;
+  for (let i = 0; i < charIndex; i++) {
+    const cp = str.codePointAt(i);
+    offset += cp > 0xFFFF ? 2 : 1;
+    if (cp > 0xFFFF) i++; // surrogate pair → lewati extra
+  }
+  return offset;
+}
+
+// Kirim pesan baru dengan custom emoji entity via raw HTTP (entities + reply_markup)
+async function sendMsgWithEmoji(chatId, text, cePositions, opts = {}) {
+  const entities = cePositions.map(charIdx => ({
+    type           : 'custom_emoji',
+    offset         : utf16Offset(text, charIdx),
+    length         : 2,
+    custom_emoji_id: CE_ID,
+  }));
+  const body = {
+    chat_id  : chatId,
+    text,
+    entities,
+    ...opts,
+  };
+  const res = await axios.post(
+    `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`,
+    body, { timeout: 8000 }
+  );
+  return res.data.result;
+}
+
+// Edit pesan existing dengan custom emoji entity via raw HTTP
+async function editMsgWithEmoji(chatId, messageId, text, cePositions, opts = {}) {
+  const entities = cePositions.map(charIdx => ({
+    type           : 'custom_emoji',
+    offset         : utf16Offset(text, charIdx),
+    length         : 2,
+    custom_emoji_id: CE_ID,
+  }));
+  const body = {
+    chat_id   : chatId,
+    message_id: messageId,
+    text,
+    entities,
+    ...opts,
+  };
+  try {
+    const res = await axios.post(
+      `https://api.telegram.org/bot${BOT_TOKEN}/editMessageText`,
+      body, { timeout: 8000 }
+    );
+    return res.data.result;
+  } catch (e) {
+    const desc = e?.response?.data?.description || e.message || '';
+    if (desc.includes('message is not modified')) return null; // bukan error
+    throw e;
+  }
+}
+
+// ─────────────────────────────────────────
 //   SEND / EDIT helper (1 pesan saja)
 // ─────────────────────────────────────────
 
@@ -293,6 +361,7 @@ bot.onText(/\/start/, async (msg) => {
   const joined = await hasJoined(userId);
 
   stopSession(userId);
+  delete msgCache[userId]; // reset agar /start selalu kirim pesan baru yang bersih
 
   if (!joined) {
     const sent = await bot.sendMessage(chatId,
@@ -303,10 +372,13 @@ bot.onText(/\/start/, async (msg) => {
     return;
   }
 
-  await sendOrEdit(chatId, userId,
-    `Halo, <b>${name}</b>! Pilih fitur di bawah.`,
-    { reply_markup: mainMenu }
-  );
+  // Teks menu utama — CE_CHAR di posisi 0 sebagai dekorasi
+  const menuText = `${CE_CHAR} Halo, <b>${name}</b>! Pilih fitur di bawah.`;
+  const sent = await sendMsgWithEmoji(chatId, menuText, [0], {
+    parse_mode  : 'HTML',
+    reply_markup: mainMenu,
+  });
+  msgCache[userId] = sent.message_id;
 });
 
 // ─────────────────────────────────────────
@@ -420,10 +492,11 @@ bot.on('callback_query', async (query) => {
     }
     await earlyAnswer('Berhasil! Selamat datang.');
     msgCache[userId] = msgId;
-    await sendOrEdit(chatId, userId,
-      `Halo, <b>${name}</b>! Pilih fitur di bawah.`,
-      { reply_markup: mainMenu }
-    );
+    const menuText = `${CE_CHAR} Halo, <b>${name}</b>! Pilih fitur di bawah.`;
+    await editMsgWithEmoji(chatId, msgId, menuText, [0], {
+      parse_mode  : 'HTML',
+      reply_markup: mainMenu,
+    });
     return;
   }
 
@@ -436,38 +509,38 @@ bot.on('callback_query', async (query) => {
     stopSession(userId);
     delete userState[userId];
     userState[userId] = 'awaiting_2fa';
-    await sendOrEdit(chatId, userId,
-      `🔐 <b>Generate 2FA</b>\n\nKirim secret key 2FA kamu (Base32).\n\n<i>Contoh: <code>JBSWY3DPEHPK3PXP</code></i>`,
-      { reply_markup: { inline_keyboard: [[{ text: '← Kembali', callback_data: 'back_main' }]] } }
-    );
+    const t2fa = `${CE_CHAR} <b>Generate 2FA</b>\n\nKirim secret key 2FA kamu (Base32).\n\n<i>Contoh: <code>JBSWY3DPEHPK3PXP</code></i>`;
+    await editMsgWithEmoji(chatId, msgId, t2fa, [0], {
+      parse_mode  : 'HTML',
+      reply_markup: { inline_keyboard: [[{ text: '← Kembali', callback_data: 'back_main' }]] },
+    });
     return;
   }
 
   // ── menu_address ──
   if (data === 'menu_address') {
     msgCache[userId] = msgId;
-    await sendOrEdit(chatId, userId,
-      `📍 <b>Random Address</b>\n\nPilih jumlah alamat yang ingin di-generate.`,
-      {
-        reply_markup: { inline_keyboard: [
-          [
-            { text: '1',  callback_data: 'addr_1'  },
-            { text: '2',  callback_data: 'addr_2'  },
-            { text: '3',  callback_data: 'addr_3'  },
-            { text: '4',  callback_data: 'addr_4'  },
-            { text: '5',  callback_data: 'addr_5'  },
-          ],
-          [
-            { text: '6',  callback_data: 'addr_6'  },
-            { text: '7',  callback_data: 'addr_7'  },
-            { text: '8',  callback_data: 'addr_8'  },
-            { text: '9',  callback_data: 'addr_9'  },
-            { text: '10', callback_data: 'addr_10' },
-          ],
-          [{ text: '← Kembali', callback_data: 'back_main' }],
-        ]},
-      }
-    );
+    const tAddr = `${CE_CHAR} <b>Random Address</b>\n\nPilih jumlah alamat yang ingin di-generate.`;
+    await editMsgWithEmoji(chatId, msgId, tAddr, [0], {
+      parse_mode  : 'HTML',
+      reply_markup: { inline_keyboard: [
+        [
+          { text: '1',  callback_data: 'addr_1'  },
+          { text: '2',  callback_data: 'addr_2'  },
+          { text: '3',  callback_data: 'addr_3'  },
+          { text: '4',  callback_data: 'addr_4'  },
+          { text: '5',  callback_data: 'addr_5'  },
+        ],
+        [
+          { text: '6',  callback_data: 'addr_6'  },
+          { text: '7',  callback_data: 'addr_7'  },
+          { text: '8',  callback_data: 'addr_8'  },
+          { text: '9',  callback_data: 'addr_9'  },
+          { text: '10', callback_data: 'addr_10' },
+        ],
+        [{ text: '← Kembali', callback_data: 'back_main' }],
+      ]},
+    });
     return;
   }
 
@@ -494,10 +567,11 @@ bot.on('callback_query', async (query) => {
     msgCache[userId] = msgId;
     stopSession(userId);
     delete userState[userId];
-    await sendOrEdit(chatId, userId,
-      `Halo, <b>${name}</b>! Pilih fitur di bawah.`,
-      { reply_markup: mainMenu }
-    );
+    const menuText = `${CE_CHAR} Halo, <b>${name}</b>! Pilih fitur di bawah.`;
+    await editMsgWithEmoji(chatId, msgId, menuText, [0], {
+      parse_mode  : 'HTML',
+      reply_markup: mainMenu,
+    });
     return;
   }
 
@@ -505,10 +579,11 @@ bot.on('callback_query', async (query) => {
   if (data === 'otp_back') {
     stopSession(userId);
     msgCache[userId] = msgId;
-    await sendOrEdit(chatId, userId,
-      `Halo, <b>${name}</b>! Pilih fitur di bawah.`,
-      { reply_markup: mainMenu }
-    );
+    const menuText = `${CE_CHAR} Halo, <b>${name}</b>! Pilih fitur di bawah.`;
+    await editMsgWithEmoji(chatId, msgId, menuText, [0], {
+      parse_mode  : 'HTML',
+      reply_markup: mainMenu,
+    });
     return;
   }
 
@@ -535,10 +610,11 @@ bot.on('callback_query', async (query) => {
   // ── menu_ip ──
   if (data === 'menu_ip') {
     msgCache[userId] = msgId;
-    await sendOrEdit(chatId, userId,
-      `🌐 <b>Cek IP / ISP</b>\n\nKirim IP address atau domain yang ingin dicek.\n\n<i>Contoh:</i>\n<code>178.128.98.106</code>\n<code>google.com</code>`,
-      { reply_markup: { inline_keyboard: [[{ text: '← Kembali', callback_data: 'back_main' }]] } }
-    );
+    const tIp = `${CE_CHAR} <b>Cek IP / ISP</b>\n\nKirim IP address atau domain yang ingin dicek.\n\n<i>Contoh:</i>\n<code>178.128.98.106</code>\n<code>google.com</code>`;
+    await editMsgWithEmoji(chatId, msgId, tIp, [0], {
+      parse_mode  : 'HTML',
+      reply_markup: { inline_keyboard: [[{ text: '← Kembali', callback_data: 'back_main' }]] },
+    });
     userState[userId] = 'awaiting_ip';
     return;
   }
