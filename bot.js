@@ -7,7 +7,7 @@ const axios = require('axios');
 
 const BOT_TOKEN    = process.env.BOT_TOKEN    || '8643566619:AAHy98hpFwLsjHZwTl5XogtgoY60mNzsh9A';
 const OWNER_ID     = parseInt(process.env.OWNER_ID || '1334793299');
-const BOT_USERNAME = process.env.BOT_USERNAME  || 'auotorderbot';
+const BOT_USERNAME = process.env.BOT_USERNAME  || 'Generate2FA_bot';
 const CHANNEL      = process.env.CHANNEL       || '@RayzellStores';
 
 // ─────────────────────────────────────────
