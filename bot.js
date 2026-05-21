@@ -259,13 +259,24 @@ async function sendOrEdit(chatId, userId, text, opts = {}) {
       return mid;
     } catch (err) {
       const em = err.message || '';
-      // "message is not modified" bukan error sungguhan — konten sama, skip saja
+      // Konten sama persis → bukan error, abaikan
       if (em.includes('message is not modified')) return mid;
-      // Error lain (deleted, invalid) → hapus cache lama, kirim pesan baru di bawah
-      delete msgCache[userId];
+      // Pesan sudah dihapus / tidak bisa diedit → hapus cache, kirim baru
+      // Tapi HANYA kalau memang pesan tidak ada lagi
+      if (
+        em.includes('message to edit not found') ||
+        em.includes('MESSAGE_ID_INVALID') ||
+        em.includes("message can't be edited")
+      ) {
+        delete msgCache[userId];
+        // jatuh ke sendMessage di bawah
+      } else {
+        // Error lain (rate limit dll) → tetap pakai mid yang ada, jangan kirim baru
+        return mid;
+      }
     }
   }
-  // Kirim pesan baru (pertama kali atau setelah cache invalid)
+  // Kirim pesan baru hanya kalau belum ada msgCache atau pesan sudah hilang
   const sent = await bot.sendMessage(chatId, text, { parse_mode: 'HTML', ...opts });
   msgCache[userId] = sent.message_id;
   return sent.message_id;
