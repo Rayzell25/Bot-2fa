@@ -641,11 +641,31 @@ bot.on('message', async (msg) => {
     const input = text.toUpperCase().replace(/\s+/g, '');
     if (!isValid2FASecret(input)) {
       // Tetap di state awaiting_2fa supaya user bisa coba lagi
-      const newMid = await sendOrEdit(chatId, userId,
-        `❌ <b>Secret tidak valid!</b>\n\nFormat harus Base32 (huruf A-Z dan angka 2-7), minimal 16 karakter.\n\n<i>Contoh yang benar: <code>JBSWY3DPEHPK3PXP</code></i>\n\nKirim ulang secret kamu, atau kembali ke menu.`,
-        { reply_markup: { inline_keyboard: [[{ text: '← Kembali ke Menu', callback_data: 'back_main' }]] } }
-      );
-      msgCache[userId] = newMid;
+      // Gunakan editMessageText langsung ke msgCache agar TIDAK pernah kirim pesan baru
+      const errText  = `❌ <b>Secret tidak valid!</b>\n\nFormat harus Base32 (huruf A-Z dan angka 2-7), minimal 16 karakter.\n\n<i>Contoh: <code>JBSWY3DPEHPK3PXP</code></i>\n\nKirim ulang, atau kembali ke menu.`;
+      const errMarkup = { inline_keyboard: [[{ text: '← Kembali ke Menu', callback_data: 'back_main' }]] };
+      const existingMid = msgCache[userId];
+      if (existingMid) {
+        try {
+          await bot.editMessageText(errText, {
+            chat_id      : chatId,
+            message_id   : existingMid,
+            parse_mode   : 'HTML',
+            reply_markup : errMarkup,
+          });
+        } catch (e) {
+          // "message is not modified" — abaikan (konten sama)
+          // Error lain (pesan dihapus) → kirim baru sekali lalu simpan
+          if (!e.message?.includes('message is not modified')) {
+            const sent = await bot.sendMessage(chatId, errText, { parse_mode: 'HTML', reply_markup: errMarkup });
+            msgCache[userId] = sent.message_id;
+          }
+        }
+      } else {
+        // Belum ada msgCache sama sekali → kirim baru sekali, simpan ID
+        const sent = await bot.sendMessage(chatId, errText, { parse_mode: 'HTML', reply_markup: errMarkup });
+        msgCache[userId] = sent.message_id;
+      }
       return;
     }
     delete userState[userId];
