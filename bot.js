@@ -1,4 +1,6 @@
-require('dotenv').config();
+// Load .env hanya kalau tidak diset dari luar (PM2 ecosystem)
+if (!process.env.BOT_TOKEN) require('dotenv').config();
+
 const TelegramBot = require('node-telegram-bot-api');
 const { TOTP, Secret } = require('otpauth');
 
@@ -11,7 +13,9 @@ const CHANNEL      = process.env.CHANNEL       || '@RayzellStores';
 //   WEBHOOK / POLLING (auto-detect)
 // ─────────────────────────────────────────
 const WEBHOOK_URL  = process.env.WEBHOOK_URL  || '';
-const WEBHOOK_PORT = parseInt(process.env.WEBHOOK_PORT || '8443');
+const WEBHOOK_PORT = parseInt(process.env.WEBHOOK_PORT || '3000');
+
+console.log('  Mode          :', WEBHOOK_URL ? `webhook (${WEBHOOK_URL})` : 'polling');
 
 let bot;
 if (WEBHOOK_URL) {
