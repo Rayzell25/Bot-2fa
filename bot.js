@@ -116,9 +116,10 @@ function timerBar(secs) {
   return '█'.repeat(filled) + '░'.repeat(empty) + `  ${secs}s`;
 }
 
-// ── hasJoined cache: 5 menit per user ──
+// ── hasJoined cache: 30 detik per user ──
+// TTL pendek supaya keluar channel langsung terdeteksi dalam 30 detik
 const joinCache = {}; // userId → { result, ts }
-const JOIN_CACHE_TTL = 5 * 60 * 1000; // 5 menit
+const JOIN_CACHE_TTL = 30 * 1000; // 30 detik
 
 async function hasJoined(userId) {
   const now = Date.now();
@@ -129,9 +130,11 @@ async function hasJoined(userId) {
     const result = !(m.status === 'kicked' || m.status === 'left');
     joinCache[userId] = { result, ts: now };
     return result;
-  } catch {
-    joinCache[userId] = { result: true, ts: now };
-    return true;
+  } catch (err) {
+    // Jika error (misal bot bukan admin channel), default ke false supaya
+    // user tetap disuruh join — jangan pernah loloskan user saat tidak pasti
+    console.error('getChatMember error:', err.message);
+    return false;
   }
 }
 
@@ -176,75 +179,36 @@ const joinOpts = {
 };
 
 // ─────────────────────────────────────────
-//   CUSTOM EMOJI HELPER
+//   EMOJI & MESSAGE HELPER
 // ─────────────────────────────────────────
 
-// Custom Emoji ID milik owner — dipasang sebagai dekorasi di teks pesan
-const CE_ID   = '5318986077455795572'; // custom emoji ID
-const CE_CHAR = '⭐';                   // placeholder emoji (1 karakter, length=2 UTF-16)
+// CE_CHAR = dekorasi header pesan (emoji Unicode biasa, tampil di semua client)
+// Custom emoji butuh Fragment username yang tidak dimiliki bot ini.
+const CE_CHAR = '🌟';
 
-// Hitung byte-offset UTF-16 dari sebuah string sampai indeks karakter ke-n
-function utf16Offset(str, charIndex) {
-  let offset = 0;
-  for (let i = 0; i < charIndex; i++) {
-    const cp = str.codePointAt(i);
-    offset += cp > 0xFFFF ? 2 : 1;
-    if (cp > 0xFFFF) i++; // surrogate pair → lewati extra
-  }
-  return offset;
+// Kirim pesan baru — wrapper sendMessage biasa
+async function sendMsgWithEmoji(chatId, text, _cePositions, opts = {}) {
+  const res = await bot.sendMessage(chatId, text, { parse_mode: 'HTML', ...opts });
+  return res;
 }
 
-// Kirim pesan baru dengan custom emoji entity via raw HTTP (entities + reply_markup)
-async function sendMsgWithEmoji(chatId, text, cePositions, opts = {}) {
-  const entities = cePositions.map(charIdx => ({
-    type           : 'custom_emoji',
-    offset         : utf16Offset(text, charIdx),
-    length         : 2,
-    custom_emoji_id: CE_ID,
-  }));
-  const body = {
-    chat_id  : chatId,
-    text,
-    entities,
-    ...opts,
-  };
-  const res = await axios.post(
-    `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`,
-    body, { timeout: 8000 }
-  );
-  return res.data.result;
-}
-
-// Edit pesan existing dengan custom emoji entity via raw HTTP
-// Error selain "message is not modified" di-swallow supaya caller tidak crash
-// dan tidak ada fallback ke sendMessage yang tidak diinginkan.
-async function editMsgWithEmoji(chatId, messageId, text, cePositions, opts = {}) {
-  const entities = cePositions.map(charIdx => ({
-    type           : 'custom_emoji',
-    offset         : utf16Offset(text, charIdx),
-    length         : 2,
-    custom_emoji_id: CE_ID,
-  }));
-  const body = {
-    chat_id   : chatId,
-    message_id: messageId,
-    text,
-    entities,
-    ...opts,
-  };
+// Edit pesan existing — wrapper editMessageText biasa
+// Semua error di-swallow supaya tidak ada fallback ke sendMessage
+async function editMsgWithEmoji(chatId, messageId, text, _cePositions, opts = {}) {
   try {
-    const res = await axios.post(
-      `https://api.telegram.org/bot${BOT_TOKEN}/editMessageText`,
-      body, { timeout: 8000 }
-    );
-    return res.data.result;
+    await bot.editMessageText(text, {
+      chat_id   : chatId,
+      message_id: messageId,
+      parse_mode: 'HTML',
+      ...opts,
+    });
   } catch (e) {
-    const desc = e?.response?.data?.description || e.message || '';
-    // "message is not modified" → konten sama, bukan error
-    // semua error lain → silent-ignore, jangan throw ke caller
-    // (caller sudah set msgCache, throw akan bikin handler crash & pesan baru muncul)
-    return null;
+    const em = e.message || '';
+    if (!em.includes('message is not modified')) {
+      // silent-ignore semua error lain supaya handler tidak crash
+    }
   }
+  return null;
 }
 
 // ─────────────────────────────────────────
