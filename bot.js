@@ -5,10 +5,15 @@ const TelegramBot = require('node-telegram-bot-api');
 const { TOTP, Secret } = require('otpauth');
 const axios = require('axios');
 
-const BOT_TOKEN    = process.env.BOT_TOKEN    || '8643566619:AAHy98hpFwLsjHZwTl5XogtgoY60mNzsh9A';
-const OWNER_ID     = parseInt(process.env.OWNER_ID || '1334793299');
-const BOT_USERNAME = process.env.BOT_USERNAME  || 'auotorderbot';
-const CHANNEL      = process.env.CHANNEL       || '@RayzellStores';
+const BOT_TOKEN    = process.env.BOT_TOKEN;
+const OWNER_ID     = parseInt(process.env.OWNER_ID || '0');
+const BOT_USERNAME = process.env.BOT_USERNAME  || 'yourbot';
+const CHANNEL      = process.env.CHANNEL       || '@yourchannel';
+
+if (!BOT_TOKEN) {
+  console.error('ERROR: BOT_TOKEN tidak ditemukan. Isi file .env terlebih dahulu.');
+  process.exit(1);
+}
 
 // ─────────────────────────────────────────
 //   WEBHOOK / POLLING (auto-detect)
@@ -199,6 +204,23 @@ async function hasJoined(userId) {
 const sessions   = {}; // OTP sessions
 const msgCache   = {}; // userId → msgId (pesan utama, untuk di-edit)
 const userState  = {}; // userId → state string ('awaiting_ip', dll)
+const stateTimer = {}; // userId → timeout handle untuk expire userState
+
+// Patch #6: set userState dengan auto-expire 5 menit
+const STATE_TTL = 5 * 60 * 1000;
+function setUserState(userId, state) {
+  clearTimeout(stateTimer[userId]);
+  userState[userId] = state;
+  stateTimer[userId] = setTimeout(() => {
+    delete userState[userId];
+    delete stateTimer[userId];
+  }, STATE_TTL);
+}
+function clearUserState(userId) {
+  clearTimeout(stateTimer[userId]);
+  delete stateTimer[userId];
+  delete userState[userId];
+}
 
 function stopSession(userId) {
   if (sessions[userId]) {
@@ -206,6 +228,23 @@ function stopSession(userId) {
     delete sessions[userId];
   }
 }
+
+// Patch #5: cleanup session + msgCache yang tidak aktif (TTL 30 menit)
+const SESSION_TTL = 30 * 60 * 1000; // 30 menit
+setInterval(() => {
+  const now = Date.now();
+  for (const uid of Object.keys(sessions)) {
+    const s = sessions[uid];
+    if (s.lastActive && now - s.lastActive > SESSION_TTL) {
+      stopSession(uid);
+      delete msgCache[uid];
+    }
+  }
+  // Bersihkan msgCache untuk user yang tidak punya session aktif > 30 menit
+  for (const uid of Object.keys(msgCache)) {
+    if (!sessions[uid]) delete msgCache[uid];
+  }
+}, 10 * 60 * 1000); // cek tiap 10 menit
 
 // ─────────────────────────────────────────
 //   KEYBOARDS
@@ -281,11 +320,38 @@ bot.onText(/\/start/, async (msg) => {
 });
 
 // ─────────────────────────────────────────
+//   /help
+// ─────────────────────────────────────────
+
+// Patch #7: tambah /help command
+bot.onText(/\/help/, async (msg) => {
+  const chatId = msg.chat.id;
+  const userId = msg.from.id;
+
+  await bot.sendMessage(chatId,
+    `<b>📖 Panduan Bot</b>\n\n` +
+    `<b>🔐 Generate 2FA</b>\n` +
+    `Masukkan secret key Base32 (contoh: <code>JBSWY3DPEHPK3PXP</code>)\n` +
+    `Bot akan menampilkan OTP realtime dengan countdown.\n\n` +
+    `<b>📍 Random Address</b>\n` +
+    `Generate 1–10 alamat Indonesia secara acak.\n\n` +
+    `<b>🌐 Cek IP / ISP</b>\n` +
+    `Masukkan IP address atau domain untuk melihat info lokasi & ISP.\n\n` +
+    `<b>Commands:</b>\n` +
+    `/start — Buka menu utama\n` +
+    `/help  — Tampilkan panduan ini`,
+    { parse_mode: 'HTML' }
+  );
+});
+
+// ─────────────────────────────────────────
 //   OTP SESSION
 // ─────────────────────────────────────────
 
 async function startOtpSession(userId, chatId, base32) {
   stopSession(userId);
+  // Guard: tandai session sedang diinisialisasi untuk mencegah double-call
+  sessions[userId] = { secret: base32, chatId, msgId: null, timer: null, lastActive: Date.now() };
 
   let otp;
   try { otp = getOTP(base32); }
@@ -305,6 +371,10 @@ async function startOtpSession(userId, chatId, base32) {
         { text: '← Kembali',        callback_data: 'otp_back' },
       ]]},    }
   );
+  // Patch #4: pastikan msgCache selalu sinkron dengan msgId yang aktif
+  msgCache[userId] = msgId;
+  // Patch #3: update session dengan msgId dan timer yang benar
+  sessions[userId].msgId = msgId;
 
   const timer = setInterval(async () => {
     try {
@@ -354,7 +424,7 @@ async function startOtpSession(userId, chatId, base32) {
     }
   }, 2000);
 
-  sessions[userId] = { secret: base32, chatId, msgId, timer };
+  sessions[userId].timer = timer;
 }
 
 // ─────────────────────────────────────────
@@ -390,8 +460,8 @@ bot.on('callback_query', async (query) => {
     await bot.answerCallbackQuery(query.id);
     msgCache[userId] = msgId;
     stopSession(userId);
-    delete userState[userId]; // reset state
-    userState[userId] = 'awaiting_2fa'; // set state 2FA
+    clearUserState(userId); // reset state
+    setUserState(userId, 'awaiting_2fa'); // set state 2FA
     await sendOrEdit(chatId, userId,
       `🔐 <b>Generate 2FA</b>\n\nKirim secret key 2FA kamu (Base32).\n\n<i>Contoh: <code>JBSWY3DPEHPK3PXP</code></i>`,
       { reply_markup: { inline_keyboard: [[{ text: '← Kembali', callback_data: 'back_main' }]] } }
@@ -452,7 +522,7 @@ bot.on('callback_query', async (query) => {
     await bot.answerCallbackQuery(query.id);
     msgCache[userId] = msgId;
     stopSession(userId);
-    delete userState[userId];
+    clearUserState(userId);
     await sendOrEdit(chatId, userId,
       `Halo, <b>${name}</b>! Pilih fitur di bawah.`,
       { reply_markup: mainMenu }
@@ -499,7 +569,7 @@ bot.on('callback_query', async (query) => {
       `🌐 <b>Cek IP / ISP</b>\n\nKirim IP address atau domain yang ingin dicek.\n\n<i>Contoh:</i>\n<code>178.128.98.106</code>\n<code>google.com</code>`,
       { reply_markup: { inline_keyboard: [[{ text: '← Kembali', callback_data: 'back_main' }]] } }
     );
-    userState[userId] = 'awaiting_ip';
+    setUserState(userId, 'awaiting_ip');
     return;
   }
 
@@ -529,7 +599,7 @@ bot.on('message', async (msg) => {
 
   // ── State: awaiting_ip ──
   if (userState[userId] === 'awaiting_ip') {
-    delete userState[userId];
+    clearUserState(userId);
     const query = text.trim();
     // Reset state dulu biar tidak nyangkut
 
@@ -555,7 +625,7 @@ bot.on('message', async (msg) => {
 
       // Flag emoji dari country code
       const flag = d.countryCode
-        ? d.countryCode.toUpperCase().replace(/./g, c => String.fromCodePoint(0x1F1E6 - 65 + c.charCodeAt(0)))
+        ? d.countryCode.toUpperCase().replace(/./g, c => String.fromCodePoint(0x1F1E6 + c.charCodeAt(0) - 65))
         : '';
 
       const mapsUrl = `https://www.google.com/maps?q=${d.lat},${d.lon}`;
@@ -600,7 +670,7 @@ bot.on('message', async (msg) => {
       );
       return;
     }
-    delete userState[userId];
+    clearUserState(userId);
     await startOtpSession(userId, chatId, input);
     return;
   }
