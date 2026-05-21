@@ -4,10 +4,11 @@ if (!process.env.BOT_TOKEN) require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const { TOTP, Secret } = require('otpauth');
 const axios = require('axios');
+const { REGIONS, generateOneAddress } = require('./countries');
 
 const BOT_TOKEN    = process.env.BOT_TOKEN    || '8643566619:AAHy98hpFwLsjHZwTl5XogtgoY60mNzsh9A';
 const OWNER_ID     = parseInt(process.env.OWNER_ID || '1334793299');
-const BOT_USERNAME = process.env.BOT_USERNAME  || 'auotorderbot';
+const BOT_USERNAME = process.env.BOT_USERNAME  || 'Generate2FA_bot';
 const CHANNEL      = process.env.CHANNEL       || '@RayzellStores';
 
 // ─────────────────────────────────────────
@@ -41,108 +42,12 @@ if (WEBHOOK_URL) {
 }
 
 // ─────────────────────────────────────────
-//   DATA ALAMAT INDONESIA (real)
+//   ADDRESS HELPER
 // ─────────────────────────────────────────
 
-const addresses = [
-  {
-    streets  : ['Jl. Sudirman No.', 'Jl. Thamrin No.', 'Jl. Gatot Subroto No.', 'Jl. Kuningan No.', 'Jl. HR Rasuna Said No.'],
-    city     : 'Jakarta Selatan',
-    province : 'DKI Jakarta',
-    postal   : ['12190', '12920', '12930', '12940', '12950'],
-    phone_prefix: '+62 812',
-  },
-  {
-    streets  : ['Jl. Malioboro No.', 'Jl. Solo No.', 'Jl. Parangtritis No.', 'Jl. Kaliurang No.', 'Jl. Magelang No.'],
-    city     : 'Yogyakarta',
-    province : 'DI Yogyakarta',
-    postal   : ['55213', '55221', '55231', '55241', '55251'],
-    phone_prefix: '+62 821',
-  },
-  {
-    streets  : ['Jl. Pemuda No.', 'Jl. Pandanaran No.', 'Jl. Gajah Mada No.', 'Jl. MT Haryono No.', 'Jl. Imam Bonjol No.'],
-    city     : 'Semarang',
-    province : 'Jawa Tengah',
-    postal   : ['50132', '50133', '50134', '50135', '50136'],
-    phone_prefix: '+62 817',
-  },
-  {
-    streets  : ['Jl. Darmo No.', 'Jl. Basuki Rahmat No.', 'Jl. Gubeng No.', 'Jl. Diponegoro No.', 'Jl. Embong Malang No.'],
-    city     : 'Surabaya',
-    province : 'Jawa Timur',
-    postal   : ['60241', '60251', '60261', '60271', '60281'],
-    phone_prefix: '+62 813',
-  },
-  {
-    streets  : ['Jl. Asia Afrika No.', 'Jl. Braga No.', 'Jl. Dago No.', 'Jl. Riau No.', 'Jl. Supratman No.'],
-    city     : 'Bandung',
-    province : 'Jawa Barat',
-    postal   : ['40111', '40112', '40113', '40114', '40115'],
-    phone_prefix: '+62 822',
-  },
-  {
-    streets  : ['Jl. Imam Bonjol No.', 'Jl. Diponegoro No.', 'Jl. Pemuda No.', 'Jl. Sutomo No.', 'Jl. Nibung No.'],
-    city     : 'Medan',
-    province : 'Sumatera Utara',
-    postal   : ['20151', '20152', '20153', '20154', '20155'],
-    phone_prefix: '+62 811',
-  },
-  {
-    streets  : ['Jl. Ahmad Yani No.', 'Jl. Lambung Mangkurat No.', 'Jl. Jendral Sudirman No.', 'Jl. Pangeran Samudera No.', 'Jl. Hasanuddin No.'],
-    city     : 'Banjarmasin',
-    province : 'Kalimantan Selatan',
-    postal   : ['70111', '70112', '70113', '70114', '70115'],
-    phone_prefix: '+62 851',
-  },
-  {
-    streets  : ['Jl. Pettarani No.', 'Jl. Urip Sumoharjo No.', 'Jl. Sultan Hasanuddin No.', 'Jl. Ratulangi No.', 'Jl. Penghibur No.'],
-    city     : 'Makassar',
-    province : 'Sulawesi Selatan',
-    postal   : ['90111', '90112', '90113', '90114', '90115'],
-    phone_prefix: '+62 852',
-  },
-  {
-    streets  : ['Jl. Diponegoro No.', 'Jl. Teuku Umar No.', 'Jl. Hayam Wuruk No.', 'Jl. Gatot Subroto No.', 'Jl. Imam Bonjol No.'],
-    city     : 'Denpasar',
-    province : 'Bali',
-    postal   : ['80111', '80112', '80113', '80114', '80115'],
-    phone_prefix: '+62 819',
-  },
-  {
-    streets  : ['Jl. Sam Ratulangi No.', 'Jl. Ahmad Yani No.', 'Jl. Sudirman No.', 'Jl. Pierre Tendean No.', 'Jl. Walanda Maramis No.'],
-    city     : 'Manado',
-    province : 'Sulawesi Utara',
-    postal   : ['95111', '95112', '95113', '95114', '95115'],
-    phone_prefix: '+62 853',
-  },
-];
-
-function rand(min, max) {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-function randItem(arr) {
-  return arr[Math.floor(Math.random() * arr.length)];
-}
-
-function generateAddress() {
-  const loc    = randItem(addresses);
-  const street = randItem(loc.streets) + rand(1, 150);
-  const postal = randItem(loc.postal);
-  const phone  = `${loc.phone_prefix} ${rand(1000, 9999)} ${rand(1000, 9999)}`;
-  const full   = `${street}, ${loc.city}, ${loc.province}, ${postal}`;
-  return { street, city: loc.city, province: loc.province, phone, postal, country: 'Indonesia', full };
-}
-
-function generateAddresses(n) {
-  const res = [];
-  for (let i = 0; i < n; i++) res.push(generateAddress());
-  return res;
-}
-
-function formatAddress(addr, i) {
+function formatAddress(addr) {
   return (
-    `<b>— #${i} —</b>\n` +
+    `<b>📍 Address Result</b>\n\n` +
     `Street   : <code>${addr.street}</code>\n` +
     `City     : <code>${addr.city}</code>\n` +
     `Province : <code>${addr.province}</code>\n` +
@@ -151,6 +56,33 @@ function formatAddress(addr, i) {
     `Country  : <code>${addr.country}</code>\n` +
     `Full     : <code>${addr.full}</code>`
   );
+}
+
+// ─────────────────────────────────────────
+//   ADDRESS PAGINATION HELPER
+// ─────────────────────────────────────────
+
+// Negara per halaman di daftar negara
+const COUNTRY_PAGE_SIZE = 8;
+
+function buildCountryKeyboard(region, page) {
+  const list = REGIONS[region];
+  const totalPages = Math.ceil(list.length / COUNTRY_PAGE_SIZE);
+  const slice = list.slice(page * COUNTRY_PAGE_SIZE, (page + 1) * COUNTRY_PAGE_SIZE);
+  // tombol negara 2 per baris
+  const rows = [];
+  for (let i = 0; i < slice.length; i += 2) {
+    const row = [{ text: slice[i], callback_data: `addr_gen_${slice[i]}` }];
+    if (slice[i + 1]) row.push({ text: slice[i + 1], callback_data: `addr_gen_${slice[i + 1]}` });
+    rows.push(row);
+  }
+  // navigasi prev/next
+  const nav = [];
+  if (page > 0)              nav.push({ text: '◀ Prev', callback_data: `addr_country_${region}_${page - 1}` });
+  if (page < totalPages - 1) nav.push({ text: 'Next ▶', callback_data: `addr_country_${region}_${page + 1}` });
+  if (nav.length) rows.push(nav);
+  rows.push([{ text: '← Kembali', callback_data: 'menu_address' }]);
+  return { inline_keyboard: rows };
 }
 
 // ─────────────────────────────────────────
@@ -184,12 +116,26 @@ function timerBar(secs) {
   return '█'.repeat(filled) + '░'.repeat(empty) + `  ${secs}s`;
 }
 
+// ── hasJoined cache: 30 detik per user ──
+// TTL pendek supaya keluar channel langsung terdeteksi dalam 30 detik
+const joinCache = {}; // userId → { result, ts }
+const JOIN_CACHE_TTL = 30 * 1000; // 30 detik
+
 async function hasJoined(userId) {
+  const now = Date.now();
+  const cached = joinCache[userId];
+  if (cached && (now - cached.ts) < JOIN_CACHE_TTL) return cached.result;
   try {
     const m = await bot.getChatMember(CHANNEL, userId);
-    if (m.status === 'kicked' || m.status === 'left') return false;
-    return true;
-  } catch { return true; }
+    const result = !(m.status === 'kicked' || m.status === 'left');
+    joinCache[userId] = { result, ts: now };
+    return result;
+  } catch (err) {
+    // Jika error (misal bot bukan admin channel), default ke false supaya
+    // user tetap disuruh join — jangan pernah loloskan user saat tidak pasti
+    console.error('getChatMember error:', err.message);
+    return false;
+  }
 }
 
 // ─────────────────────────────────────────
@@ -199,6 +145,8 @@ async function hasJoined(userId) {
 const sessions   = {}; // OTP sessions
 const msgCache   = {}; // userId → msgId (pesan utama, untuk di-edit)
 const userState  = {}; // userId → state string ('awaiting_ip', dll)
+const cbDebounce = {}; // userId → timestamp last callback (debounce 500ms)
+const cbLock     = {}; // userId → true kalau callback sedang diproses (processing lock)
 
 function stopSession(userId) {
   if (sessions[userId]) {
@@ -231,10 +179,51 @@ const joinOpts = {
 };
 
 // ─────────────────────────────────────────
-//   SEND / EDIT helper (1 pesan saja)
+//   EMOJI & MESSAGE HELPER
 // ─────────────────────────────────────────
 
-async function sendOrEdit(chatId, userId, text, opts = {}) {
+// CE_CHAR = dekorasi header pesan (emoji Unicode biasa, tampil di semua client)
+// Custom emoji butuh Fragment username yang tidak dimiliki bot ini.
+const CE_CHAR = '🌟';
+
+// Kirim pesan baru — wrapper sendMessage biasa
+async function sendMsgWithEmoji(chatId, text, _cePositions, opts = {}) {
+  const res = await bot.sendMessage(chatId, text, { parse_mode: 'HTML', ...opts });
+  return res;
+}
+
+// Edit pesan existing — wrapper editMessageText biasa
+// Semua error di-swallow supaya tidak ada fallback ke sendMessage
+async function editMsgWithEmoji(chatId, messageId, text, _cePositions, opts = {}) {
+  try {
+    await bot.editMessageText(text, {
+      chat_id   : chatId,
+      message_id: messageId,
+      parse_mode: 'HTML',
+      ...opts,
+    });
+  } catch (e) {
+    const em = e.message || '';
+    if (!em.includes('message is not modified')) {
+      // silent-ignore semua error lain supaya handler tidak crash
+    }
+  }
+  return null;
+}
+
+// ─────────────────────────────────────────
+//   SEND / EDIT helper (1 pesan saja)
+//   ATURAN GLOBAL: semua output bot harus lewat sini.
+//   sendMessage HANYA boleh dipanggil jika msgCache kosong atau pesan benar hilang.
+//   hintMsgId: kalau diisi, gunakan ini sebagai anchor sebelum cek msgCache
+//   (dipakai oleh callback handler supaya double-click tidak buat pesan baru)
+// ─────────────────────────────────────────
+
+async function sendOrEdit(chatId, userId, text, opts = {}, hintMsgId = null) {
+  // Kalau ada hintMsgId dari callback, paksa update msgCache dulu
+  if (hintMsgId && !msgCache[userId]) {
+    msgCache[userId] = hintMsgId;
+  }
   const mid = msgCache[userId];
   if (mid) {
     try {
@@ -245,9 +234,26 @@ async function sendOrEdit(chatId, userId, text, opts = {}) {
         ...opts,
       });
       return mid;
-    } catch (_) {}
+    } catch (err) {
+      const em = err.message || '';
+      // Konten sama persis → bukan error, abaikan, kembalikan mid yang ada
+      if (em.includes('message is not modified')) return mid;
+      // Pesan benar-benar sudah tidak ada → hapus cache, kirim baru di bawah
+      if (
+        em.includes('message to edit not found') ||
+        em.includes('MESSAGE_ID_INVALID') ||
+        em.includes("message can't be edited")
+      ) {
+        delete msgCache[userId];
+        // jatuh ke sendMessage di bawah
+      } else {
+        // Semua error lain (rate limit, network, dll)
+        // → JANGAN kirim baru, tetap return mid supaya 1-message UI terjaga
+        return mid;
+      }
+    }
   }
-  // Kirim baru kalau belum ada atau gagal edit
+  // Kirim pesan baru hanya kalau msgCache kosong atau pesan sudah benar-benar hilang
   const sent = await bot.sendMessage(chatId, text, { parse_mode: 'HTML', ...opts });
   msgCache[userId] = sent.message_id;
   return sent.message_id;
@@ -264,6 +270,7 @@ bot.onText(/\/start/, async (msg) => {
   const joined = await hasJoined(userId);
 
   stopSession(userId);
+  delete msgCache[userId]; // reset agar /start selalu kirim pesan baru yang bersih
 
   if (!joined) {
     const sent = await bot.sendMessage(chatId,
@@ -274,10 +281,13 @@ bot.onText(/\/start/, async (msg) => {
     return;
   }
 
-  await sendOrEdit(chatId, userId,
-    `Halo, <b>${name}</b>! Pilih fitur di bawah.`,
-    { reply_markup: mainMenu }
-  );
+  // Teks menu utama — CE_CHAR di posisi 0 sebagai dekorasi
+  const menuText = `${CE_CHAR} Halo, <b>${name}</b>! Pilih fitur di bawah.`;
+  const sent = await sendMsgWithEmoji(chatId, menuText, [0], {
+    parse_mode  : 'HTML',
+    reply_markup: mainMenu,
+  });
+  msgCache[userId] = sent.message_id;
 });
 
 // ─────────────────────────────────────────
@@ -285,7 +295,10 @@ bot.onText(/\/start/, async (msg) => {
 // ─────────────────────────────────────────
 
 async function startOtpSession(userId, chatId, base32) {
+  // Hentikan & bersihkan session lama DULU sebelum buat baru
   stopSession(userId);
+  // Tandai session sedang dibuat untuk cegah double-call saat spam Refresh
+  sessions[userId] = { secret: base32, chatId, msgId: null, timer: null, starting: true };
 
   let otp;
   try { otp = getOTP(base32); }
@@ -368,107 +381,161 @@ bot.on('callback_query', async (query) => {
   const name   = query.from.first_name || 'Pengguna';
   const data   = query.data || '';
 
+  // ── answerCallbackQuery PALING AWAL — hilangkan spinner segera ──
+  // Dilakukan sebelum debounce/lock supaya Telegram tidak timeout
+  bot.answerCallbackQuery(query.id).catch(() => {});
+
+  // ── Debounce 500ms + Processing Lock ──
+  // Keduanya diperlukan: debounce tolak klik ke-2 yang datang cepat,
+  // lock mencegah race condition klik ke-3 yang lolos debounce saat
+  // handler pertama masih async (await edit).
+  const now = Date.now();
+  if (cbDebounce[userId] && (now - cbDebounce[userId]) < 500) return;
+  if (cbLock[userId]) return;
+
+  cbDebounce[userId] = now;
+  cbLock[userId]     = true;
+
+  try {
+    await _handleCallback(userId, chatId, msgId, name, data, query.id);
+  } catch (_) {
+    // Tangkap semua error supaya lock selalu di-release
+  } finally {
+    cbLock[userId] = false;
+  }
+});
+
+// Handler isi callback — dipisah supaya try-finally rapi
+async function _handleCallback(userId, chatId, msgId, name, data, queryId) {
+
   // ── check_join ──
   if (data === 'check_join') {
     const joined = await hasJoined(userId);
     if (!joined) {
-      return bot.answerCallbackQuery(query.id, {
+      bot.answerCallbackQuery(queryId, {
         text: 'Kamu belum join. Silakan join channel dulu.', show_alert: true,
-      });
+      }).catch(() => {});
+      return;
     }
-    await bot.answerCallbackQuery(query.id, { text: 'Berhasil! Selamat datang.' });
+    bot.answerCallbackQuery(queryId, { text: 'Berhasil! Selamat datang.' }).catch(() => {});
     msgCache[userId] = msgId;
-    await sendOrEdit(chatId, userId,
-      `Halo, <b>${name}</b>! Pilih fitur di bawah.`,
-      { reply_markup: mainMenu }
-    );
+    const menuText = `${CE_CHAR} Halo, <b>${name}</b>! Pilih fitur di bawah.`;
+    await editMsgWithEmoji(chatId, msgId, menuText, [0], {
+      parse_mode  : 'HTML',
+      reply_markup: mainMenu,
+    });
     return;
   }
 
   // ── menu_2fa ──
   if (data === 'menu_2fa') {
-    await bot.answerCallbackQuery(query.id);
     msgCache[userId] = msgId;
     stopSession(userId);
-    delete userState[userId]; // reset state
-    userState[userId] = 'awaiting_2fa'; // set state 2FA
-    await sendOrEdit(chatId, userId,
-      `🔐 <b>Generate 2FA</b>\n\nKirim secret key 2FA kamu (Base32).\n\n<i>Contoh: <code>JBSWY3DPEHPK3PXP</code></i>`,
-      { reply_markup: { inline_keyboard: [[{ text: '← Kembali', callback_data: 'back_main' }]] } }
-    );
+    delete userState[userId];
+    userState[userId] = 'awaiting_2fa';
+    const t2fa = `${CE_CHAR} <b>Generate 2FA</b>\n\nKirim secret key 2FA kamu (Base32).\n\n<i>Contoh: <code>JBSWY3DPEHPK3PXP</code></i>`;
+    await editMsgWithEmoji(chatId, msgId, t2fa, [0], {
+      parse_mode  : 'HTML',
+      reply_markup: { inline_keyboard: [[{ text: '← Kembali', callback_data: 'back_main' }]] },
+    });
     return;
   }
 
   // ── menu_address ──
   if (data === 'menu_address') {
-    await bot.answerCallbackQuery(query.id);
     msgCache[userId] = msgId;
-    await sendOrEdit(chatId, userId,
-      `📍 <b>Random Address</b>\n\nPilih jumlah alamat yang ingin di-generate.`,
-      {
-        reply_markup: { inline_keyboard: [
-          [
-            { text: '1',  callback_data: 'addr_1'  },
-            { text: '2',  callback_data: 'addr_2'  },
-            { text: '3',  callback_data: 'addr_3'  },
-            { text: '4',  callback_data: 'addr_4'  },
-            { text: '5',  callback_data: 'addr_5'  },
-          ],
-          [
-            { text: '6',  callback_data: 'addr_6'  },
-            { text: '7',  callback_data: 'addr_7'  },
-            { text: '8',  callback_data: 'addr_8'  },
-            { text: '9',  callback_data: 'addr_9'  },
-            { text: '10', callback_data: 'addr_10' },
-          ],
-          [{ text: '← Kembali', callback_data: 'back_main' }],
-        ]},
-      }
-    );
+    const tAddr = `${CE_CHAR} <b>Random Address</b>\n\nPilih region:`;
+    await editMsgWithEmoji(chatId, msgId, tAddr, [0], {
+      parse_mode  : 'HTML',
+      reply_markup: { inline_keyboard: [
+        [
+          { text: '🌏 Asia',   callback_data: 'addr_country_Asia_0'   },
+          { text: '🌍 Europe', callback_data: 'addr_country_Europe_0' },
+        ],
+        [{ text: '← Kembali', callback_data: 'back_main' }],
+      ]},
+    });
     return;
   }
 
-  // ── addr_N ──
-  if (data.startsWith('addr_')) {
-    const n    = parseInt(data.replace('addr_', ''));
-    const last = data; // simpan untuk tombol Generate Baru
-    await bot.answerCallbackQuery(query.id);
+  // ── addr_country_REGION_PAGE — daftar negara dengan pagination ──
+  if (data.startsWith('addr_country_')) {
     msgCache[userId] = msgId;
+    // format: addr_country_Asia_0
+    const parts  = data.slice('addr_country_'.length).split('_');
+    const page   = parseInt(parts[parts.length - 1]);
+    const region = parts.slice(0, -1).join('_'); // handle multi-word regions
+    const kb = buildCountryKeyboard(region, page);
+    const tR = `${CE_CHAR} <b>Random Address — ${region}</b>\n\nPilih negara:`;
+    await editMsgWithEmoji(chatId, msgId, tR, [0], {
+      parse_mode  : 'HTML',
+      reply_markup: kb,
+    });
+    return;
+  }
 
-    const addrs = generateAddresses(n);
-    const text  = addrs.map((a, i) => formatAddress(a, i + 1)).join('\n\n');
-
-    await sendOrEdit(chatId, userId, text, {
+  // ── addr_gen_COUNTRY — generate 1 alamat dari negara ini ──
+  if (data.startsWith('addr_gen_')) {
+    msgCache[userId] = msgId;
+    const country = data.slice('addr_gen_'.length);
+    const addr    = generateOneAddress(country);
+    if (!addr) {
+      await sendOrEdit(chatId, userId, `❌ Negara tidak ditemukan: <code>${country}</code>`, {
+        reply_markup: { inline_keyboard: [[{ text: '← Kembali', callback_data: 'menu_address' }]] },
+      }, msgId);
+      return;
+    }
+    // Cari region negara ini untuk tombol back
+    const region = Object.keys(REGIONS).find(r => REGIONS[r].includes(country)) || 'Asia';
+    const page   = Math.floor(REGIONS[region].indexOf(country) / COUNTRY_PAGE_SIZE);
+    await sendOrEdit(chatId, userId, formatAddress(addr), {
       reply_markup: { inline_keyboard: [[
-        { text: '← Kembali',      callback_data: 'menu_address' },
-        { text: '🔄 Generate Baru', callback_data: last },
+        { text: '🔄 Generate Again', callback_data: `addr_gen_${country}` },
+        { text: '← Kembali',        callback_data: `addr_country_${region}_${page}` },
       ]]},
+    }, msgId);
+    return;
+  }
+
+  // ── addr_N (legacy) — kept for safety, redirect ke menu_address ──
+  if (data.startsWith('addr_')) {
+    msgCache[userId] = msgId;
+    const tAddr = `${CE_CHAR} <b>Random Address</b>\n\nPilih region:`;
+    await editMsgWithEmoji(chatId, msgId, tAddr, [0], {
+      parse_mode  : 'HTML',
+      reply_markup: { inline_keyboard: [
+        [
+          { text: '🌏 Asia',   callback_data: 'addr_country_Asia_0'   },
+          { text: '🌍 Europe', callback_data: 'addr_country_Europe_0' },
+        ],
+        [{ text: '← Kembali', callback_data: 'back_main' }],
+      ]},
     });
     return;
   }
 
   // ── back_main ──
   if (data === 'back_main') {
-    await bot.answerCallbackQuery(query.id);
     msgCache[userId] = msgId;
     stopSession(userId);
     delete userState[userId];
-    await sendOrEdit(chatId, userId,
-      `Halo, <b>${name}</b>! Pilih fitur di bawah.`,
-      { reply_markup: mainMenu }
-    );
+    const menuText = `${CE_CHAR} Halo, <b>${name}</b>! Pilih fitur di bawah.`;
+    await editMsgWithEmoji(chatId, msgId, menuText, [0], {
+      parse_mode  : 'HTML',
+      reply_markup: mainMenu,
+    });
     return;
   }
 
   // ── otp_back ──
   if (data === 'otp_back') {
-    await bot.answerCallbackQuery(query.id);
     stopSession(userId);
     msgCache[userId] = msgId;
-    await sendOrEdit(chatId, userId,
-      `Halo, <b>${name}</b>! Pilih fitur di bawah.`,
-      { reply_markup: mainMenu }
-    );
+    const menuText = `${CE_CHAR} Halo, <b>${name}</b>! Pilih fitur di bawah.`;
+    await editMsgWithEmoji(chatId, msgId, menuText, [0], {
+      parse_mode  : 'HTML',
+      reply_markup: mainMenu,
+    });
     return;
   }
 
@@ -477,15 +544,15 @@ bot.on('callback_query', async (query) => {
     const base32 = data.slice(12);
     const sess   = sessions[userId];
 
-    // Timer masih jalan = belum expired
-    if (sess && sess.timer !== null) {
+    // Timer masih jalan ATAU session sedang diinisialisasi = tolak spam
+    if (sess && (sess.timer !== null || sess.starting)) {
       const secs = secondsLeft();
-      return bot.answerCallbackQuery(query.id, {
+      bot.answerCallbackQuery(queryId, {
         text: `OTP masih aktif. Tunggu ${secs} detik lagi.`, show_alert: false,
-      });
+      }).catch(() => {});
+      return;
     }
 
-    await bot.answerCallbackQuery(query.id, { text: 'Refreshed!' });
     msgCache[userId] = msgId;
     await startOtpSession(userId, chatId, base32);
     return;
@@ -493,18 +560,16 @@ bot.on('callback_query', async (query) => {
 
   // ── menu_ip ──
   if (data === 'menu_ip') {
-    await bot.answerCallbackQuery(query.id);
     msgCache[userId] = msgId;
-    await sendOrEdit(chatId, userId,
-      `🌐 <b>Cek IP / ISP</b>\n\nKirim IP address atau domain yang ingin dicek.\n\n<i>Contoh:</i>\n<code>178.128.98.106</code>\n<code>google.com</code>`,
-      { reply_markup: { inline_keyboard: [[{ text: '← Kembali', callback_data: 'back_main' }]] } }
-    );
+    const tIp = `${CE_CHAR} <b>Cek IP / ISP</b>\n\nKirim IP address atau domain yang ingin dicek.\n\n<i>Contoh:</i>\n<code>178.128.98.106</code>\n<code>google.com</code>`;
+    await editMsgWithEmoji(chatId, msgId, tIp, [0], {
+      parse_mode  : 'HTML',
+      reply_markup: { inline_keyboard: [[{ text: '← Kembali', callback_data: 'back_main' }]] },
+    });
     userState[userId] = 'awaiting_ip';
     return;
   }
-
-  await bot.answerCallbackQuery(query.id).catch(() => {});
-});
+}
 
 // ─────────────────────────────────────────
 //   MESSAGE — terima secret 2FA / IP lookup
@@ -517,21 +582,31 @@ bot.on('message', async (msg) => {
   const userId = msg.from.id;
   const text   = msg.text.trim();
 
+  // ── Debounce pesan: abaikan kalau kirim < 800ms dari pesan sebelumnya ──
+  // Naikkan ke 800ms supaya spam paste 5x sekaligus tetap hanya proses 1
+  const nowMsg = Date.now();
+  if (cbDebounce[`msg_${userId}`] && (nowMsg - cbDebounce[`msg_${userId}`]) < 800) {
+    try { await bot.deleteMessage(chatId, msg.message_id); } catch (_) {}
+    return;
+  }
+  cbDebounce[`msg_${userId}`] = nowMsg;
+
+  // Hapus pesan user biar chat tetap rapi (sebelum cek join supaya pesan user hilang)
+  try { await bot.deleteMessage(chatId, msg.message_id); } catch (_) {}
+
   if (!(await hasJoined(userId))) {
-    return bot.sendMessage(chatId,
+    // Pakai sendOrEdit supaya tetap 1-message UI
+    await sendOrEdit(chatId, userId,
       `Untuk menggunakan bot ini, kamu harus join channel kami dulu.`,
       joinOpts
     );
+    return;
   }
-
-  // Hapus pesan user biar chat tetap rapi
-  try { await bot.deleteMessage(chatId, msg.message_id); } catch (_) {}
 
   // ── State: awaiting_ip ──
   if (userState[userId] === 'awaiting_ip') {
     delete userState[userId];
     const query = text.trim();
-    // Reset state dulu biar tidak nyangkut
 
     await sendOrEdit(chatId, userId,
       `🌐 <b>Mengecek...</b> <code>${query}</code>`,
@@ -539,7 +614,6 @@ bot.on('message', async (msg) => {
     );
 
     try {
-      // Kalau domain, resolve dulu ke IP pakai ip-api
       const res = await axios.get(`http://ip-api.com/json/${encodeURIComponent(query)}?fields=status,message,country,countryCode,regionName,city,zip,lat,lon,timezone,isp,org,as,query`, {
         timeout: 8000,
       });
@@ -553,7 +627,6 @@ bot.on('message', async (msg) => {
         return;
       }
 
-      // Flag emoji dari country code
       const flag = d.countryCode
         ? d.countryCode.toUpperCase().replace(/./g, c => String.fromCodePoint(0x1F1E6 - 65 + c.charCodeAt(0)))
         : '';
@@ -594,9 +667,11 @@ bot.on('message', async (msg) => {
   if (userState[userId] === 'awaiting_2fa') {
     const input = text.toUpperCase().replace(/\s+/g, '');
     if (!isValid2FASecret(input)) {
+      // Tetap di state awaiting_2fa — user bisa coba lagi
+      // SELALU pakai sendOrEdit() — tidak boleh ada sendMessage baru di sini
       await sendOrEdit(chatId, userId,
-        `Error: This is not 2FA Secret !\n\n<i>Coba lagi atau kembali ke menu.</i>`,
-        { reply_markup: { inline_keyboard: [[{ text: '← Kembali', callback_data: 'back_main' }]] } }
+        `❌ <b>Secret tidak valid!</b>\n\nFormat harus Base32 (huruf A-Z dan angka 2-7), minimal 16 karakter.\n\n<i>Contoh: <code>JBSWY3DPEHPK3PXP</code></i>\n\nKirim ulang, atau kembali ke menu.`,
+        { reply_markup: { inline_keyboard: [[{ text: '← Kembali ke Menu', callback_data: 'back_main' }]] } }
       );
       return;
     }
