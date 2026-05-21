@@ -210,7 +210,8 @@ async function hasJoined(userId) {
 const sessions   = {}; // OTP sessions
 const msgCache   = {}; // userId → msgId (pesan utama, untuk di-edit)
 const userState  = {}; // userId → state string ('awaiting_ip', dll)
-const cbDebounce = {}; // userId → timestamp last callback (debounce)
+const cbDebounce = {}; // userId → timestamp last callback (debounce 500ms)
+const cbLock     = {}; // userId → true kalau callback sedang diproses (processing lock)
 
 function stopSession(userId) {
   if (sessions[userId]) {
@@ -283,6 +284,8 @@ async function sendMsgWithEmoji(chatId, text, cePositions, opts = {}) {
 }
 
 // Edit pesan existing dengan custom emoji entity via raw HTTP
+// Error selain "message is not modified" di-swallow supaya caller tidak crash
+// dan tidak ada fallback ke sendMessage yang tidak diinginkan.
 async function editMsgWithEmoji(chatId, messageId, text, cePositions, opts = {}) {
   const entities = cePositions.map(charIdx => ({
     type           : 'custom_emoji',
@@ -305,15 +308,17 @@ async function editMsgWithEmoji(chatId, messageId, text, cePositions, opts = {})
     return res.data.result;
   } catch (e) {
     const desc = e?.response?.data?.description || e.message || '';
-    if (desc.includes('message is not modified')) return null; // bukan error
-    throw e;
+    // "message is not modified" → konten sama, bukan error
+    // semua error lain → silent-ignore, jangan throw ke caller
+    // (caller sudah set msgCache, throw akan bikin handler crash & pesan baru muncul)
+    return null;
   }
 }
 
 // ─────────────────────────────────────────
 //   SEND / EDIT helper (1 pesan saja)
 //   ATURAN GLOBAL: semua output bot harus lewat sini.
-//   sendMessage HANYA boleh dipanggil jika msgCache kosong.
+//   sendMessage HANYA boleh dipanggil jika msgCache kosong atau pesan benar hilang.
 // ─────────────────────────────────────────
 
 async function sendOrEdit(chatId, userId, text, opts = {}) {
@@ -331,22 +336,22 @@ async function sendOrEdit(chatId, userId, text, opts = {}) {
       const em = err.message || '';
       // Konten sama persis → bukan error, abaikan, kembalikan mid yang ada
       if (em.includes('message is not modified')) return mid;
-      // Pesan sudah dihapus / tidak bisa diedit → hapus cache, kirim baru
+      // Pesan benar-benar sudah tidak ada → hapus cache, kirim baru di bawah
       if (
         em.includes('message to edit not found') ||
         em.includes('MESSAGE_ID_INVALID') ||
-        em.includes("message can't be edited") ||
-        em.includes('Bad Request')
+        em.includes("message can't be edited")
       ) {
         delete msgCache[userId];
         // jatuh ke sendMessage di bawah
       } else {
-        // Error lain (rate limit, network) → jangan kirim baru, return mid
+        // Semua error lain (Bad Request parse, rate limit, network, dll)
+        // → JANGAN kirim baru, tetap return mid supaya 1-message UI terjaga
         return mid;
       }
     }
   }
-  // Kirim pesan baru hanya kalau belum ada msgCache atau pesan sudah hilang
+  // Kirim pesan baru hanya kalau msgCache kosong atau pesan sudah benar-benar hilang
   const sent = await bot.sendMessage(chatId, text, { parse_mode: 'HTML', ...opts });
   msgCache[userId] = sent.message_id;
   return sent.message_id;
@@ -474,25 +479,43 @@ bot.on('callback_query', async (query) => {
   const name   = query.from.first_name || 'Pengguna';
   const data   = query.data || '';
 
-  // ── Debounce: abaikan klik dalam 300ms dari klik terakhir ──
-  const now = Date.now();
-  if (cbDebounce[userId] && (now - cbDebounce[userId]) < 300) {
-    return bot.answerCallbackQuery(query.id).catch(() => {});
-  }
-  cbDebounce[userId] = now;
+  // ── answerCallbackQuery PALING AWAL — hilangkan spinner segera ──
+  // Dilakukan sebelum debounce/lock supaya Telegram tidak timeout
+  bot.answerCallbackQuery(query.id).catch(() => {});
 
-  // ── answerCallbackQuery PALING AWAL (hilangkan loading spinner segera) ──
-  // Untuk check_join dan otp_refresh kita answer nanti dengan teks khusus,
-  // tapi tetap answer segera dengan empty dulu agar tidak pending.
-  const earlyAnswer = (text, alert) => bot.answerCallbackQuery(query.id, text !== undefined ? { text, show_alert: !!alert } : {}).catch(() => {});
+  // ── Debounce 500ms + Processing Lock ──
+  // Keduanya diperlukan: debounce tolak klik ke-2 yang datang cepat,
+  // lock mencegah race condition klik ke-3 yang lolos debounce saat
+  // handler pertama masih async (await edit).
+  const now = Date.now();
+  if (cbDebounce[userId] && (now - cbDebounce[userId]) < 500) return;
+  if (cbLock[userId]) return;
+
+  cbDebounce[userId] = now;
+  cbLock[userId]     = true;
+
+  try {
+    await _handleCallback(userId, chatId, msgId, name, data, query.id);
+  } catch (_) {
+    // Tangkap semua error supaya lock selalu di-release
+  } finally {
+    cbLock[userId] = false;
+  }
+});
+
+// Handler isi callback — dipisah supaya try-finally rapi
+async function _handleCallback(userId, chatId, msgId, name, data, queryId) {
 
   // ── check_join ──
   if (data === 'check_join') {
     const joined = await hasJoined(userId);
     if (!joined) {
-      return earlyAnswer('Kamu belum join. Silakan join channel dulu.', true);
+      bot.answerCallbackQuery(queryId, {
+        text: 'Kamu belum join. Silakan join channel dulu.', show_alert: true,
+      }).catch(() => {});
+      return;
     }
-    await earlyAnswer('Berhasil! Selamat datang.');
+    bot.answerCallbackQuery(queryId, { text: 'Berhasil! Selamat datang.' }).catch(() => {});
     msgCache[userId] = msgId;
     const menuText = `${CE_CHAR} Halo, <b>${name}</b>! Pilih fitur di bawah.`;
     await editMsgWithEmoji(chatId, msgId, menuText, [0], {
@@ -501,9 +524,6 @@ bot.on('callback_query', async (query) => {
     });
     return;
   }
-
-  // Untuk semua selain check_join: answer segera sekarang
-  await earlyAnswer();
 
   // ── menu_2fa ──
   if (data === 'menu_2fa') {
@@ -597,8 +617,7 @@ bot.on('callback_query', async (query) => {
     // Timer masih jalan ATAU session sedang diinisialisasi = tolak spam
     if (sess && (sess.timer !== null || sess.starting)) {
       const secs = secondsLeft();
-      // Kirim alert tanpa await agar tidak block
-      bot.answerCallbackQuery(query.id, {
+      bot.answerCallbackQuery(queryId, {
         text: `OTP masih aktif. Tunggu ${secs} detik lagi.`, show_alert: false,
       }).catch(() => {});
       return;
@@ -620,7 +639,7 @@ bot.on('callback_query', async (query) => {
     userState[userId] = 'awaiting_ip';
     return;
   }
-});
+}
 
 // ─────────────────────────────────────────
 //   MESSAGE — terima secret 2FA / IP lookup
