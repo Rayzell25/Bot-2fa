@@ -4,6 +4,7 @@ if (!process.env.BOT_TOKEN) require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const { TOTP, Secret } = require('otpauth');
 const axios = require('axios');
+const { REGIONS, generateOneAddress } = require('./countries');
 
 const BOT_TOKEN    = process.env.BOT_TOKEN    || '8643566619:AAHy98hpFwLsjHZwTl5XogtgoY60mNzsh9A';
 const OWNER_ID     = parseInt(process.env.OWNER_ID || '1334793299');
@@ -41,108 +42,12 @@ if (WEBHOOK_URL) {
 }
 
 // ─────────────────────────────────────────
-//   DATA ALAMAT INDONESIA (real)
+//   ADDRESS HELPER
 // ─────────────────────────────────────────
 
-const addresses = [
-  {
-    streets  : ['Jl. Sudirman No.', 'Jl. Thamrin No.', 'Jl. Gatot Subroto No.', 'Jl. Kuningan No.', 'Jl. HR Rasuna Said No.'],
-    city     : 'Jakarta Selatan',
-    province : 'DKI Jakarta',
-    postal   : ['12190', '12920', '12930', '12940', '12950'],
-    phone_prefix: '+62 812',
-  },
-  {
-    streets  : ['Jl. Malioboro No.', 'Jl. Solo No.', 'Jl. Parangtritis No.', 'Jl. Kaliurang No.', 'Jl. Magelang No.'],
-    city     : 'Yogyakarta',
-    province : 'DI Yogyakarta',
-    postal   : ['55213', '55221', '55231', '55241', '55251'],
-    phone_prefix: '+62 821',
-  },
-  {
-    streets  : ['Jl. Pemuda No.', 'Jl. Pandanaran No.', 'Jl. Gajah Mada No.', 'Jl. MT Haryono No.', 'Jl. Imam Bonjol No.'],
-    city     : 'Semarang',
-    province : 'Jawa Tengah',
-    postal   : ['50132', '50133', '50134', '50135', '50136'],
-    phone_prefix: '+62 817',
-  },
-  {
-    streets  : ['Jl. Darmo No.', 'Jl. Basuki Rahmat No.', 'Jl. Gubeng No.', 'Jl. Diponegoro No.', 'Jl. Embong Malang No.'],
-    city     : 'Surabaya',
-    province : 'Jawa Timur',
-    postal   : ['60241', '60251', '60261', '60271', '60281'],
-    phone_prefix: '+62 813',
-  },
-  {
-    streets  : ['Jl. Asia Afrika No.', 'Jl. Braga No.', 'Jl. Dago No.', 'Jl. Riau No.', 'Jl. Supratman No.'],
-    city     : 'Bandung',
-    province : 'Jawa Barat',
-    postal   : ['40111', '40112', '40113', '40114', '40115'],
-    phone_prefix: '+62 822',
-  },
-  {
-    streets  : ['Jl. Imam Bonjol No.', 'Jl. Diponegoro No.', 'Jl. Pemuda No.', 'Jl. Sutomo No.', 'Jl. Nibung No.'],
-    city     : 'Medan',
-    province : 'Sumatera Utara',
-    postal   : ['20151', '20152', '20153', '20154', '20155'],
-    phone_prefix: '+62 811',
-  },
-  {
-    streets  : ['Jl. Ahmad Yani No.', 'Jl. Lambung Mangkurat No.', 'Jl. Jendral Sudirman No.', 'Jl. Pangeran Samudera No.', 'Jl. Hasanuddin No.'],
-    city     : 'Banjarmasin',
-    province : 'Kalimantan Selatan',
-    postal   : ['70111', '70112', '70113', '70114', '70115'],
-    phone_prefix: '+62 851',
-  },
-  {
-    streets  : ['Jl. Pettarani No.', 'Jl. Urip Sumoharjo No.', 'Jl. Sultan Hasanuddin No.', 'Jl. Ratulangi No.', 'Jl. Penghibur No.'],
-    city     : 'Makassar',
-    province : 'Sulawesi Selatan',
-    postal   : ['90111', '90112', '90113', '90114', '90115'],
-    phone_prefix: '+62 852',
-  },
-  {
-    streets  : ['Jl. Diponegoro No.', 'Jl. Teuku Umar No.', 'Jl. Hayam Wuruk No.', 'Jl. Gatot Subroto No.', 'Jl. Imam Bonjol No.'],
-    city     : 'Denpasar',
-    province : 'Bali',
-    postal   : ['80111', '80112', '80113', '80114', '80115'],
-    phone_prefix: '+62 819',
-  },
-  {
-    streets  : ['Jl. Sam Ratulangi No.', 'Jl. Ahmad Yani No.', 'Jl. Sudirman No.', 'Jl. Pierre Tendean No.', 'Jl. Walanda Maramis No.'],
-    city     : 'Manado',
-    province : 'Sulawesi Utara',
-    postal   : ['95111', '95112', '95113', '95114', '95115'],
-    phone_prefix: '+62 853',
-  },
-];
-
-function rand(min, max) {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-function randItem(arr) {
-  return arr[Math.floor(Math.random() * arr.length)];
-}
-
-function generateAddress() {
-  const loc    = randItem(addresses);
-  const street = randItem(loc.streets) + rand(1, 150);
-  const postal = randItem(loc.postal);
-  const phone  = `${loc.phone_prefix} ${rand(1000, 9999)} ${rand(1000, 9999)}`;
-  const full   = `${street}, ${loc.city}, ${loc.province}, ${postal}`;
-  return { street, city: loc.city, province: loc.province, phone, postal, country: 'Indonesia', full };
-}
-
-function generateAddresses(n) {
-  const res = [];
-  for (let i = 0; i < n; i++) res.push(generateAddress());
-  return res;
-}
-
-function formatAddress(addr, i) {
+function formatAddress(addr) {
   return (
-    `<b>— #${i} —</b>\n` +
+    `<b>📍 Address Result</b>\n\n` +
     `Street   : <code>${addr.street}</code>\n` +
     `City     : <code>${addr.city}</code>\n` +
     `Province : <code>${addr.province}</code>\n` +
@@ -151,6 +56,33 @@ function formatAddress(addr, i) {
     `Country  : <code>${addr.country}</code>\n` +
     `Full     : <code>${addr.full}</code>`
   );
+}
+
+// ─────────────────────────────────────────
+//   ADDRESS PAGINATION HELPER
+// ─────────────────────────────────────────
+
+// Negara per halaman di daftar negara
+const COUNTRY_PAGE_SIZE = 8;
+
+function buildCountryKeyboard(region, page) {
+  const list = REGIONS[region];
+  const totalPages = Math.ceil(list.length / COUNTRY_PAGE_SIZE);
+  const slice = list.slice(page * COUNTRY_PAGE_SIZE, (page + 1) * COUNTRY_PAGE_SIZE);
+  // tombol negara 2 per baris
+  const rows = [];
+  for (let i = 0; i < slice.length; i += 2) {
+    const row = [{ text: slice[i], callback_data: `addr_gen_${slice[i]}` }];
+    if (slice[i + 1]) row.push({ text: slice[i + 1], callback_data: `addr_gen_${slice[i + 1]}` });
+    rows.push(row);
+  }
+  // navigasi prev/next
+  const nav = [];
+  if (page > 0)              nav.push({ text: '◀ Prev', callback_data: `addr_country_${region}_${page - 1}` });
+  if (page < totalPages - 1) nav.push({ text: 'Next ▶', callback_data: `addr_country_${region}_${page + 1}` });
+  if (nav.length) rows.push(nav);
+  rows.push([{ text: '← Kembali', callback_data: 'menu_address' }]);
+  return { inline_keyboard: rows };
 }
 
 // ─────────────────────────────────────────
@@ -319,9 +251,15 @@ async function editMsgWithEmoji(chatId, messageId, text, cePositions, opts = {})
 //   SEND / EDIT helper (1 pesan saja)
 //   ATURAN GLOBAL: semua output bot harus lewat sini.
 //   sendMessage HANYA boleh dipanggil jika msgCache kosong atau pesan benar hilang.
+//   hintMsgId: kalau diisi, gunakan ini sebagai anchor sebelum cek msgCache
+//   (dipakai oleh callback handler supaya double-click tidak buat pesan baru)
 // ─────────────────────────────────────────
 
-async function sendOrEdit(chatId, userId, text, opts = {}) {
+async function sendOrEdit(chatId, userId, text, opts = {}, hintMsgId = null) {
+  // Kalau ada hintMsgId dari callback, paksa update msgCache dulu
+  if (hintMsgId && !msgCache[userId]) {
+    msgCache[userId] = hintMsgId;
+  }
   const mid = msgCache[userId];
   if (mid) {
     try {
@@ -345,7 +283,7 @@ async function sendOrEdit(chatId, userId, text, opts = {}) {
         delete msgCache[userId];
         // jatuh ke sendMessage di bawah
       } else {
-        // Semua error lain (Bad Request parse, rate limit, network, dll)
+        // Semua error lain (rate limit, network, dll)
         // → JANGAN kirim baru, tetap return mid supaya 1-message UI terjaga
         return mid;
       }
@@ -542,23 +480,13 @@ async function _handleCallback(userId, chatId, msgId, name, data, queryId) {
   // ── menu_address ──
   if (data === 'menu_address') {
     msgCache[userId] = msgId;
-    const tAddr = `${CE_CHAR} <b>Random Address</b>\n\nPilih jumlah alamat yang ingin di-generate.`;
+    const tAddr = `${CE_CHAR} <b>Random Address</b>\n\nPilih region:`;
     await editMsgWithEmoji(chatId, msgId, tAddr, [0], {
       parse_mode  : 'HTML',
       reply_markup: { inline_keyboard: [
         [
-          { text: '1',  callback_data: 'addr_1'  },
-          { text: '2',  callback_data: 'addr_2'  },
-          { text: '3',  callback_data: 'addr_3'  },
-          { text: '4',  callback_data: 'addr_4'  },
-          { text: '5',  callback_data: 'addr_5'  },
-        ],
-        [
-          { text: '6',  callback_data: 'addr_6'  },
-          { text: '7',  callback_data: 'addr_7'  },
-          { text: '8',  callback_data: 'addr_8'  },
-          { text: '9',  callback_data: 'addr_9'  },
-          { text: '10', callback_data: 'addr_10' },
+          { text: '🌏 Asia',   callback_data: 'addr_country_Asia_0'   },
+          { text: '🌍 Europe', callback_data: 'addr_country_Europe_0' },
         ],
         [{ text: '← Kembali', callback_data: 'back_main' }],
       ]},
@@ -566,20 +494,58 @@ async function _handleCallback(userId, chatId, msgId, name, data, queryId) {
     return;
   }
 
-  // ── addr_N ──
-  if (data.startsWith('addr_')) {
-    const n    = parseInt(data.replace('addr_', ''));
-    const last = data;
+  // ── addr_country_REGION_PAGE — daftar negara dengan pagination ──
+  if (data.startsWith('addr_country_')) {
     msgCache[userId] = msgId;
+    // format: addr_country_Asia_0
+    const parts  = data.slice('addr_country_'.length).split('_');
+    const page   = parseInt(parts[parts.length - 1]);
+    const region = parts.slice(0, -1).join('_'); // handle multi-word regions
+    const kb = buildCountryKeyboard(region, page);
+    const tR = `${CE_CHAR} <b>Random Address — ${region}</b>\n\nPilih negara:`;
+    await editMsgWithEmoji(chatId, msgId, tR, [0], {
+      parse_mode  : 'HTML',
+      reply_markup: kb,
+    });
+    return;
+  }
 
-    const addrs = generateAddresses(n);
-    const text  = addrs.map((a, i) => formatAddress(a, i + 1)).join('\n\n');
-
-    await sendOrEdit(chatId, userId, text, {
+  // ── addr_gen_COUNTRY — generate 1 alamat dari negara ini ──
+  if (data.startsWith('addr_gen_')) {
+    msgCache[userId] = msgId;
+    const country = data.slice('addr_gen_'.length);
+    const addr    = generateOneAddress(country);
+    if (!addr) {
+      await sendOrEdit(chatId, userId, `❌ Negara tidak ditemukan: <code>${country}</code>`, {
+        reply_markup: { inline_keyboard: [[{ text: '← Kembali', callback_data: 'menu_address' }]] },
+      }, msgId);
+      return;
+    }
+    // Cari region negara ini untuk tombol back
+    const region = Object.keys(REGIONS).find(r => REGIONS[r].includes(country)) || 'Asia';
+    const page   = Math.floor(REGIONS[region].indexOf(country) / COUNTRY_PAGE_SIZE);
+    await sendOrEdit(chatId, userId, formatAddress(addr), {
       reply_markup: { inline_keyboard: [[
-        { text: '← Kembali',        callback_data: 'menu_address' },
-        { text: '🔄 Generate Baru', callback_data: last },
+        { text: '🔄 Generate Again', callback_data: `addr_gen_${country}` },
+        { text: '← Kembali',        callback_data: `addr_country_${region}_${page}` },
       ]]},
+    }, msgId);
+    return;
+  }
+
+  // ── addr_N (legacy) — kept for safety, redirect ke menu_address ──
+  if (data.startsWith('addr_')) {
+    msgCache[userId] = msgId;
+    const tAddr = `${CE_CHAR} <b>Random Address</b>\n\nPilih region:`;
+    await editMsgWithEmoji(chatId, msgId, tAddr, [0], {
+      parse_mode  : 'HTML',
+      reply_markup: { inline_keyboard: [
+        [
+          { text: '🌏 Asia',   callback_data: 'addr_country_Asia_0'   },
+          { text: '🌍 Europe', callback_data: 'addr_country_Europe_0' },
+        ],
+        [{ text: '← Kembali', callback_data: 'back_main' }],
+      ]},
     });
     return;
   }
