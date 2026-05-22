@@ -4,6 +4,12 @@ if (!process.env.BOT_TOKEN) require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const { TOTP, Secret } = require('otpauth');
 const axios = require('axios');
+const http  = require('http');
+const https = require('https');
+
+// Keep-alive agents — reuse TCP connections buat API calls
+const httpAgent  = new http.Agent({ keepAlive: true });
+const httpsAgent = new https.Agent({ keepAlive: true });
 
 const BOT_TOKEN    = process.env.BOT_TOKEN    || '8643566619:AAHy98hpFwLsjHZwTl5XogtgoY60mNzsh9A';
 const OWNER_ID     = parseInt(process.env.OWNER_ID || '1334793299');
@@ -188,15 +194,23 @@ async function hasJoined(userId) {
   const now = Date.now();
   const c   = joinCache[userId];
   if (c && now - c.ts < JOIN_TTL) return c.result;
-  try {
-    const m = await bot.getChatMember(CHANNEL, userId);
-    const result = !(m.status === 'kicked' || m.status === 'left');
-    joinCache[userId] = { result, ts: now };
-    return result;
-  } catch {
-    joinCache[userId] = { result: true, ts: now };
-    return true;
-  }
+  // Dedup: jika sudah ada pending request, reuse
+  if (joinPending[userId]) return joinPending[userId];
+  const p = (async () => {
+    try {
+      const m = await bot.getChatMember(CHANNEL, userId);
+      const result = !(m.status === 'kicked' || m.status === 'left');
+      joinCache[userId] = { result, ts: Date.now() };
+      return result;
+    } catch {
+      joinCache[userId] = { result: true, ts: Date.now() };
+      return true;
+    } finally {
+      delete joinPending[userId];
+    }
+  })();
+  joinPending[userId] = p;
+  return p;
 }
 
 // ─────────────────────────────────────────
@@ -217,8 +231,9 @@ function acquireLock(userId) {
 }
 
 // ── hasJoined cache (8 menit) ─────────────────────────────────────────────────
-const joinCache = {}; // userId → { result, ts }
-const JOIN_TTL  = 8 * 60 * 1000; // 8 menit
+const joinCache   = {}; // userId → { result, ts }
+const joinPending = {}; // userId → Promise (dedup inflight requests)
+const JOIN_TTL    = 8 * 60 * 1000; // 8 menit
 
 function stopSession(userId) {
   if (sessions[userId]) {
@@ -400,7 +415,7 @@ async function startOtpSession(userId, chatId, base32) {
         stopSession(userId);
       }
     }
-  }, 2000);
+  }, 3000);
 
   sessions[userId] = { secret: base32, chatId, msgId, timer };
 }
@@ -578,8 +593,8 @@ bot.on('message', async (msg) => {
     );
   }
 
-  // Hapus pesan user biar chat tetap rapi
-  try { await bot.deleteMessage(chatId, msg.message_id); } catch (_) {}
+  // Hapus pesan user biar chat tetap rapi (fire & forget — jangan blocking)
+  bot.deleteMessage(chatId, msg.message_id).catch(() => {});
 
   // ── State: awaiting_ip ──
   if (userState[userId] === 'awaiting_ip') {
@@ -595,7 +610,9 @@ bot.on('message', async (msg) => {
     try {
       // Kalau domain, resolve dulu ke IP pakai ip-api
       const res = await axios.get(`http://ip-api.com/json/${encodeURIComponent(query)}?fields=status,message,country,countryCode,regionName,city,zip,lat,lon,timezone,isp,org,as,query`, {
-        timeout: 8000,
+        timeout: 5000,
+        httpAgent,
+        httpsAgent,
       });
       const d = res.data;
 
