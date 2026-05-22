@@ -4,6 +4,12 @@ if (!process.env.BOT_TOKEN) require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const { TOTP, Secret } = require('otpauth');
 const axios = require('axios');
+const http  = require('http');
+const https = require('https');
+
+// Keep-alive agents — reuse TCP connections buat API calls
+const httpAgent  = new http.Agent({ keepAlive: true });
+const httpsAgent = new https.Agent({ keepAlive: true });
 
 const BOT_TOKEN    = process.env.BOT_TOKEN    || '8643566619:AAHy98hpFwLsjHZwTl5XogtgoY60mNzsh9A';
 const OWNER_ID     = parseInt(process.env.OWNER_ID || '1334793299');
@@ -185,11 +191,26 @@ function timerBar(secs) {
 }
 
 async function hasJoined(userId) {
-  try {
-    const m = await bot.getChatMember(CHANNEL, userId);
-    if (m.status === 'kicked' || m.status === 'left') return false;
-    return true;
-  } catch { return true; }
+  const now = Date.now();
+  const c   = joinCache[userId];
+  if (c && now - c.ts < JOIN_TTL) return c.result;
+  // Dedup: jika sudah ada pending request, reuse
+  if (joinPending[userId]) return joinPending[userId];
+  const p = (async () => {
+    try {
+      const m = await bot.getChatMember(CHANNEL, userId);
+      const result = !(m.status === 'kicked' || m.status === 'left');
+      joinCache[userId] = { result, ts: Date.now() };
+      return result;
+    } catch {
+      joinCache[userId] = { result: true, ts: Date.now() };
+      return true;
+    } finally {
+      delete joinPending[userId];
+    }
+  })();
+  joinPending[userId] = p;
+  return p;
 }
 
 // ─────────────────────────────────────────
@@ -200,11 +221,27 @@ const sessions   = {}; // OTP sessions
 const msgCache   = {}; // userId → msgId (pesan utama, untuk di-edit)
 const userState  = {}; // userId → state string ('awaiting_ip', dll)
 
+// ── Callback lock (debounce 200ms per user) ──────────────────────────────────
+const cbLock = {};
+function acquireLock(userId) {
+  if (cbLock[userId]) return false;
+  cbLock[userId] = true;
+  setTimeout(() => { delete cbLock[userId]; }, 200);
+  return true;
+}
+
+// ── hasJoined cache (8 menit) ─────────────────────────────────────────────────
+const joinCache   = {}; // userId → { result, ts }
+const joinPending = {}; // userId → Promise (dedup inflight requests)
+const JOIN_TTL    = 8 * 60 * 1000; // 8 menit
+
 function stopSession(userId) {
   if (sessions[userId]) {
     clearInterval(sessions[userId].timer);
     delete sessions[userId];
   }
+  // Reset content cache agar edit berikutnya tidak di-skip
+  delete lastContent[userId];
 }
 
 // ─────────────────────────────────────────
@@ -234,9 +271,20 @@ const joinOpts = {
 //   SEND / EDIT helper (1 pesan saja)
 // ─────────────────────────────────────────
 
+// Cache teks+keyboard terakhir per userId agar skip edit jika sama
+const lastContent = {}; // userId → { text, kb }
+
 async function sendOrEdit(chatId, userId, text, opts = {}) {
   const mid = msgCache[userId];
+
+  // Serialisasi keyboard untuk comparison
+  const kbStr = opts.reply_markup ? JSON.stringify(opts.reply_markup) : '';
+
   if (mid) {
+    // Skip kalau isi sama persis — jangan buang 1 API call
+    const prev = lastContent[userId];
+    if (prev && prev.text === text && prev.kb === kbStr) return mid;
+
     try {
       await bot.editMessageText(text, {
         chat_id   : chatId,
@@ -244,12 +292,27 @@ async function sendOrEdit(chatId, userId, text, opts = {}) {
         parse_mode: 'HTML',
         ...opts,
       });
+      lastContent[userId] = { text, kb: kbStr };
       return mid;
-    } catch (_) {}
+    } catch (e) {
+      const em = e.message || '';
+      // Abaikan error-error yang tidak perlu fallback sendMessage
+      if (
+        em.includes('message is not modified') ||
+        em.includes('query is too old') ||
+        em.includes("message can't be edited") ||
+        em.includes('MESSAGE_ID_INVALID')
+      ) {
+        return mid;
+      }
+      // Error lain → lanjut kirim baru
+    }
   }
-  // Kirim baru kalau belum ada atau gagal edit
+
+  // Kirim baru
   const sent = await bot.sendMessage(chatId, text, { parse_mode: 'HTML', ...opts });
-  msgCache[userId] = sent.message_id;
+  msgCache[userId]    = sent.message_id;
+  lastContent[userId] = { text, kb: kbStr };
   return sent.message_id;
 }
 
@@ -352,7 +415,7 @@ async function startOtpSession(userId, chatId, base32) {
         stopSession(userId);
       }
     }
-  }, 2000);
+  }, 3000);
 
   sessions[userId] = { secret: base32, chatId, msgId, timer };
 }
@@ -368,15 +431,28 @@ bot.on('callback_query', async (query) => {
   const name   = query.from.first_name || 'Pengguna';
   const data   = query.data || '';
 
+  // ── 1. Answer PALING AWAL — hilangkan spinner tombol instan ──────────────
+  // Khusus check_join & otp_refresh yang butuh custom text, kita handle
+  // di dalam branch masing-masing. Untuk semua lain, answer kosong dulu.
+  if (data !== 'check_join' && !data.startsWith('otp_refresh_')) {
+    bot.answerCallbackQuery(query.id).catch(() => {});
+  }
+
+  // ── 2. Callback lock — tolak spam klik 200ms ─────────────────────────────
+  if (!acquireLock(userId)) return;
+
   // ── check_join ──
   if (data === 'check_join') {
     const joined = await hasJoined(userId);
     if (!joined) {
-      return bot.answerCallbackQuery(query.id, {
+      bot.answerCallbackQuery(query.id, {
         text: 'Kamu belum join. Silakan join channel dulu.', show_alert: true,
-      });
+      }).catch(() => {});
+      return;
     }
-    await bot.answerCallbackQuery(query.id, { text: 'Berhasil! Selamat datang.' });
+    bot.answerCallbackQuery(query.id, { text: 'Berhasil! Selamat datang.' }).catch(() => {});
+    // Invalidate cache agar next check fresh
+    delete joinCache[userId];
     msgCache[userId] = msgId;
     await sendOrEdit(chatId, userId,
       `Halo, <b>${name}</b>! Pilih fitur di bawah.`,
@@ -387,11 +463,10 @@ bot.on('callback_query', async (query) => {
 
   // ── menu_2fa ──
   if (data === 'menu_2fa') {
-    await bot.answerCallbackQuery(query.id);
     msgCache[userId] = msgId;
     stopSession(userId);
-    delete userState[userId]; // reset state
-    userState[userId] = 'awaiting_2fa'; // set state 2FA
+    delete userState[userId];
+    userState[userId] = 'awaiting_2fa';
     await sendOrEdit(chatId, userId,
       `🔐 <b>Generate 2FA</b>\n\nKirim secret key 2FA kamu (Base32).\n\n<i>Contoh: <code>JBSWY3DPEHPK3PXP</code></i>`,
       { reply_markup: { inline_keyboard: [[{ text: '← Kembali', callback_data: 'back_main' }]] } }
@@ -401,7 +476,6 @@ bot.on('callback_query', async (query) => {
 
   // ── menu_address ──
   if (data === 'menu_address') {
-    await bot.answerCallbackQuery(query.id);
     msgCache[userId] = msgId;
     await sendOrEdit(chatId, userId,
       `📍 <b>Random Address</b>\n\nPilih jumlah alamat yang ingin di-generate.`,
@@ -431,8 +505,7 @@ bot.on('callback_query', async (query) => {
   // ── addr_N ──
   if (data.startsWith('addr_')) {
     const n    = parseInt(data.replace('addr_', ''));
-    const last = data; // simpan untuk tombol Generate Baru
-    await bot.answerCallbackQuery(query.id);
+    const last = data;
     msgCache[userId] = msgId;
 
     const addrs = generateAddresses(n);
@@ -440,7 +513,7 @@ bot.on('callback_query', async (query) => {
 
     await sendOrEdit(chatId, userId, text, {
       reply_markup: { inline_keyboard: [[
-        { text: '← Kembali',      callback_data: 'menu_address' },
+        { text: '← Kembali',        callback_data: 'menu_address' },
         { text: '🔄 Generate Baru', callback_data: last },
       ]]},
     });
@@ -449,7 +522,6 @@ bot.on('callback_query', async (query) => {
 
   // ── back_main ──
   if (data === 'back_main') {
-    await bot.answerCallbackQuery(query.id);
     msgCache[userId] = msgId;
     stopSession(userId);
     delete userState[userId];
@@ -462,7 +534,6 @@ bot.on('callback_query', async (query) => {
 
   // ── otp_back ──
   if (data === 'otp_back') {
-    await bot.answerCallbackQuery(query.id);
     stopSession(userId);
     msgCache[userId] = msgId;
     await sendOrEdit(chatId, userId,
@@ -480,12 +551,13 @@ bot.on('callback_query', async (query) => {
     // Timer masih jalan = belum expired
     if (sess && sess.timer !== null) {
       const secs = secondsLeft();
-      return bot.answerCallbackQuery(query.id, {
+      bot.answerCallbackQuery(query.id, {
         text: `OTP masih aktif. Tunggu ${secs} detik lagi.`, show_alert: false,
-      });
+      }).catch(() => {});
+      return;
     }
 
-    await bot.answerCallbackQuery(query.id, { text: 'Refreshed!' });
+    bot.answerCallbackQuery(query.id, { text: 'Refreshed!' }).catch(() => {});
     msgCache[userId] = msgId;
     await startOtpSession(userId, chatId, base32);
     return;
@@ -493,7 +565,6 @@ bot.on('callback_query', async (query) => {
 
   // ── menu_ip ──
   if (data === 'menu_ip') {
-    await bot.answerCallbackQuery(query.id);
     msgCache[userId] = msgId;
     await sendOrEdit(chatId, userId,
       `🌐 <b>Cek IP / ISP</b>\n\nKirim IP address atau domain yang ingin dicek.\n\n<i>Contoh:</i>\n<code>178.128.98.106</code>\n<code>google.com</code>`,
@@ -502,8 +573,6 @@ bot.on('callback_query', async (query) => {
     userState[userId] = 'awaiting_ip';
     return;
   }
-
-  await bot.answerCallbackQuery(query.id).catch(() => {});
 });
 
 // ─────────────────────────────────────────
@@ -524,8 +593,8 @@ bot.on('message', async (msg) => {
     );
   }
 
-  // Hapus pesan user biar chat tetap rapi
-  try { await bot.deleteMessage(chatId, msg.message_id); } catch (_) {}
+  // Hapus pesan user biar chat tetap rapi (fire & forget — jangan blocking)
+  bot.deleteMessage(chatId, msg.message_id).catch(() => {});
 
   // ── State: awaiting_ip ──
   if (userState[userId] === 'awaiting_ip') {
@@ -541,7 +610,9 @@ bot.on('message', async (msg) => {
     try {
       // Kalau domain, resolve dulu ke IP pakai ip-api
       const res = await axios.get(`http://ip-api.com/json/${encodeURIComponent(query)}?fields=status,message,country,countryCode,regionName,city,zip,lat,lon,timezone,isp,org,as,query`, {
-        timeout: 8000,
+        timeout: 5000,
+        httpAgent,
+        httpsAgent,
       });
       const d = res.data;
 
