@@ -142,14 +142,14 @@ function generateAddresses(n) {
 
 function formatAddress(addr, i) {
   return (
-    `<b>— #${i} —</b>\n` +
-    `Street   : <code>${addr.street}</code>\n` +
-    `City     : <code>${addr.city}</code>\n` +
-    `Province : <code>${addr.province}</code>\n` +
-    `Phone    : <code>${addr.phone}</code>\n` +
-    `Postal   : <code>${addr.postal}</code>\n` +
-    `Country  : <code>${addr.country}</code>\n` +
-    `Full     : <code>${addr.full}</code>`
+    `⎔ <b>#${i}</b>\n` +
+    `⊹ Street   : <code>${addr.street}</code>\n` +
+    `⊹ City     : <code>${addr.city}</code>\n` +
+    `⊹ Province : <code>${addr.province}</code>\n` +
+    `⊹ Phone    : <code>${addr.phone}</code>\n` +
+    `⊹ Postal   : <code>${addr.postal}</code>\n` +
+    `⊹ Country  : <code>${addr.country}</code>\n` +
+    `⊹ Full     : <code>${addr.full}</code>`
   );
 }
 
@@ -267,7 +267,7 @@ bot.onText(/\/start/, async (msg) => {
 
   if (!joined) {
     const sent = await bot.sendMessage(chatId,
-      `Untuk menggunakan bot ini, kamu harus join channel kami dulu.`,
+      `⎔ Gabung dulu yuk!\n\nKamu harus join channel kami sebelum pakai bot ini.`,
       joinOpts
     );
     msgCache[userId] = sent.message_id;
@@ -275,7 +275,7 @@ bot.onText(/\/start/, async (msg) => {
   }
 
   await sendOrEdit(chatId, userId,
-    `Halo, <b>${name}</b>! Pilih fitur di bawah.`,
+    `⎔ Halo, <b>${name}</b>!\n\nPilih fitur di bawah.`,
     { reply_markup: mainMenu }
   );
 });
@@ -296,13 +296,11 @@ async function startOtpSession(userId, chatId, base32) {
   const ic          = secs <= 5 ? '🔴' : secs <= 10 ? '🟡' : '🟢';
 
   const msgId = await sendOrEdit(chatId, userId,
-    `🔐 2FA Code: <code>${otp}</code>\n` +
-    `${ic} Status: <b>Aktif</b>\n\n` +
-    `<code>${timerBar(secs)}</code>`,
+    `⎔ <b>Kode 2FA</b>\n\n⊹ <code>${otp}</code>`,
     {
       reply_markup: { inline_keyboard: [[
-        { text: `⏱ ${secs}s`,       callback_data: `otp_refresh_${base32}` },
-        { text: '← Kembali',        callback_data: 'otp_back' },
+        { text: `◷ ${secs}s`,   callback_data: `otp_refresh_${base32}` },
+        { text: '← Back',       callback_data: 'otp_back' },
       ]]},    }
   );
 
@@ -316,34 +314,29 @@ async function startOtpSession(userId, chatId, base32) {
         if (sessions[userId]) sessions[userId].timer = null;
 
         await bot.editMessageText(
-          `🔐 2FA Code: <code>${otp}</code>\n` +
-          `⏳ Status: <b>Expired</b>\n\n` +
-          `Tap Refresh untuk mendapatkan kode baru.`,
+          `⎔ <b>Kode 2FA</b>\n\n⊹ <code>${otp}</code>\n\n⟳ Expired · Tap Refresh`,
           {
             chat_id      : chatId,
             message_id   : msgId,
             parse_mode   : 'HTML',
             reply_markup : { inline_keyboard: [[
-              { text: '← Kembali',  callback_data: 'otp_back' },
-              { text: '🔄 Refresh', callback_data: `otp_refresh_${base32}` },
+              { text: '← Back',    callback_data: 'otp_back' },
+              { text: '↺ Refresh', callback_data: `otp_refresh_${base32}` },
             ]]},
           }
         );
         return;
       }
 
-      const ic2 = nowSecs <= 5 ? '🔴' : nowSecs <= 10 ? '🟡' : '🟢';
       await bot.editMessageText(
-        `🔐 2FA Code: <code>${otp}</code>\n` +
-        `${ic2} Status: <b>Aktif</b>\n\n` +
-        `<code>${timerBar(nowSecs)}</code>`,
+        `⎔ <b>Kode 2FA</b>\n\n⊹ <code>${otp}</code>`,
         {
           chat_id      : chatId,
           message_id   : msgId,
           parse_mode   : 'HTML',
           reply_markup : { inline_keyboard: [[
-            { text: `⏱ ${nowSecs}s`, callback_data: `otp_refresh_${base32}` },
-            { text: '← Kembali',    callback_data: 'otp_back' },
+            { text: `◷ ${nowSecs}s`, callback_data: `otp_refresh_${base32}` },
+            { text: '← Back',        callback_data: 'otp_back' },
           ]]},        }
       );
     } catch (e) {
@@ -379,7 +372,7 @@ bot.on('callback_query', async (query) => {
     await bot.answerCallbackQuery(query.id, { text: 'Berhasil! Selamat datang.' });
     msgCache[userId] = msgId;
     await sendOrEdit(chatId, userId,
-      `Halo, <b>${name}</b>! Pilih fitur di bawah.`,
+      `⎔ Halo, <b>${name}</b>!\n\nPilih fitur di bawah.`,
       { reply_markup: mainMenu }
     );
     return;
@@ -393,8 +386,8 @@ bot.on('callback_query', async (query) => {
     delete userState[userId]; // reset state
     userState[userId] = 'awaiting_2fa'; // set state 2FA
     await sendOrEdit(chatId, userId,
-      `🔐 <b>Generate 2FA</b>\n\nKirim secret key 2FA kamu (Base32).\n\n<i>Contoh: <code>JBSWY3DPEHPK3PXP</code></i>`,
-      { reply_markup: { inline_keyboard: [[{ text: '← Kembali', callback_data: 'back_main' }]] } }
+      `⎔ <b>Generate 2FA</b>\n\nKirim secret key 2FA kamu.\n\n⊹ Contoh: <code>JBSWY3DPEHPK3PXP</code>`,
+      { reply_markup: { inline_keyboard: [[{ text: '← Back', callback_data: 'back_main' }]] } }
     );
     return;
   }
@@ -404,7 +397,7 @@ bot.on('callback_query', async (query) => {
     await bot.answerCallbackQuery(query.id);
     msgCache[userId] = msgId;
     await sendOrEdit(chatId, userId,
-      `📍 <b>Random Address</b>\n\nPilih jumlah alamat yang ingin di-generate.`,
+      `⎔ <b>Random Address</b>\n\nPilih jumlah alamat.`,
       {
         reply_markup: { inline_keyboard: [
           [
@@ -421,7 +414,7 @@ bot.on('callback_query', async (query) => {
             { text: '9',  callback_data: 'addr_9'  },
             { text: '10', callback_data: 'addr_10' },
           ],
-          [{ text: '← Kembali', callback_data: 'back_main' }],
+          [{ text: '← Back', callback_data: 'back_main' }],
         ]},
       }
     );
@@ -440,8 +433,8 @@ bot.on('callback_query', async (query) => {
 
     await sendOrEdit(chatId, userId, text, {
       reply_markup: { inline_keyboard: [[
-        { text: '← Kembali',      callback_data: 'menu_address' },
-        { text: '🔄 Generate Baru', callback_data: last },
+        { text: '← Back',         callback_data: 'menu_address' },
+        { text: '↺ Generate Baru', callback_data: last },
       ]]},
     });
     return;
@@ -454,7 +447,7 @@ bot.on('callback_query', async (query) => {
     stopSession(userId);
     delete userState[userId];
     await sendOrEdit(chatId, userId,
-      `Halo, <b>${name}</b>! Pilih fitur di bawah.`,
+      `⎔ Halo, <b>${name}</b>!\n\nPilih fitur di bawah.`,
       { reply_markup: mainMenu }
     );
     return;
@@ -466,7 +459,7 @@ bot.on('callback_query', async (query) => {
     stopSession(userId);
     msgCache[userId] = msgId;
     await sendOrEdit(chatId, userId,
-      `Halo, <b>${name}</b>! Pilih fitur di bawah.`,
+      `⎔ Halo, <b>${name}</b>!\n\nPilih fitur di bawah.`,
       { reply_markup: mainMenu }
     );
     return;
@@ -496,8 +489,8 @@ bot.on('callback_query', async (query) => {
     await bot.answerCallbackQuery(query.id);
     msgCache[userId] = msgId;
     await sendOrEdit(chatId, userId,
-      `🌐 <b>Cek IP / ISP</b>\n\nKirim IP address atau domain yang ingin dicek.\n\n<i>Contoh:</i>\n<code>178.128.98.106</code>\n<code>google.com</code>`,
-      { reply_markup: { inline_keyboard: [[{ text: '← Kembali', callback_data: 'back_main' }]] } }
+      `⎔ <b>Cek IP / ISP</b>\n\nKirim IP atau domain.\n\n⊹ <code>178.128.98.106</code>\n⊹ <code>google.com</code>`,
+      { reply_markup: { inline_keyboard: [[{ text: '← Back', callback_data: 'back_main' }]] } }
     );
     userState[userId] = 'awaiting_ip';
     return;
@@ -519,7 +512,7 @@ bot.on('message', async (msg) => {
 
   if (!(await hasJoined(userId))) {
     return bot.sendMessage(chatId,
-      `Untuk menggunakan bot ini, kamu harus join channel kami dulu.`,
+      `⎔ Gabung dulu yuk!\n\nKamu harus join channel kami sebelum pakai bot ini.`,
       joinOpts
     );
   }
@@ -534,8 +527,8 @@ bot.on('message', async (msg) => {
     // Reset state dulu biar tidak nyangkut
 
     await sendOrEdit(chatId, userId,
-      `🌐 <b>Mengecek...</b> <code>${query}</code>`,
-      { reply_markup: { inline_keyboard: [[{ text: '← Kembali', callback_data: 'back_main' }]] } }
+      `⎔ <b>Mengecek...</b> <code>${query}</code>`,
+      { reply_markup: { inline_keyboard: [[{ text: '← Back', callback_data: 'back_main' }]] } }
     );
 
     try {
@@ -547,9 +540,9 @@ bot.on('message', async (msg) => {
 
       if (d.status === 'fail') {
         await sendOrEdit(chatId, userId,
-          `❌ <b>Gagal mengecek:</b> <code>${query}</code>\n\n<i>${d.message || 'IP/domain tidak valid.'}</i>`,
-          { reply_markup: { inline_keyboard: [[{ text: '← Kembali', callback_data: 'back_main' }]] } }
-        );
+        `⎔ Gagal mengecek: <code>${query}</code>\n\n<i>${d.message || 'IP/domain tidak valid.'}</i>`,
+        { reply_markup: { inline_keyboard: [[{ text: '← Back', callback_data: 'back_main' }]] } }
+      );
         return;
       }
 
@@ -561,30 +554,30 @@ bot.on('message', async (msg) => {
       const mapsUrl = `https://www.google.com/maps?q=${d.lat},${d.lon}`;
 
       const result =
-        `<b>IP Lookup Result</b>\n\n` +
-        `Public IP   : <code>${d.query}</code>\n` +
-        `ISP         : <code>${d.isp}</code>\n` +
-        `Org         : <code>${d.org}</code>\n` +
-        `ASN         : <code>${d.as}</code>\n` +
-        `Country     : <code>${d.country} ${flag} (${d.countryCode})</code>\n` +
-        `City        : <code>${d.city}</code>\n` +
-        `Region      : <code>${d.regionName}</code>\n` +
-        `Coordinates : <code>${d.lat}, ${d.lon}</code>\n` +
-        `Timezone    : <code>${d.timezone}</code>\n` +
-        `ZIP/Code    : <code>${d.zip || '-'}</code>\n\n` +
-        `🌍 <a href="${mapsUrl}">Lihat di Google Maps</a>`;
+        `⎔ <b>Hasil IP Lookup</b>\n\n` +
+        `⊹ IP       : <code>${d.query}</code>\n` +
+        `⊹ ISP      : <code>${d.isp}</code>\n` +
+        `⊹ Org      : <code>${d.org}</code>\n` +
+        `⊹ ASN      : <code>${d.as}</code>\n` +
+        `⊹ Negara   : <code>${d.country} ${flag} (${d.countryCode})</code>\n` +
+        `⊹ Kota     : <code>${d.city}</code>\n` +
+        `⊹ Region   : <code>${d.regionName}</code>\n` +
+        `⊹ Koordinat: <code>${d.lat}, ${d.lon}</code>\n` +
+        `⊹ Timezone : <code>${d.timezone}</code>\n` +
+        `⊹ ZIP      : <code>${d.zip || '-'}</code>\n\n` +
+        `⊹ <a href="${mapsUrl}">Lihat di Google Maps</a>`;
 
       await sendOrEdit(chatId, userId, result, {
         reply_markup: { inline_keyboard: [[
-          { text: '🔄 Cek Lagi',  callback_data: 'menu_ip'   },
-          { text: '← Kembali',   callback_data: 'back_main' },
+          { text: '↺ Cek Lagi',  callback_data: 'menu_ip'   },
+          { text: '← Back',      callback_data: 'back_main' },
         ]]},
         disable_web_page_preview: true,
       });
     } catch (err) {
-      await sendOrEdit(chatId, userId,
-        `❌ <b>Error:</b> Gagal menghubungi server. Coba lagi.\n\n<i>${err.message}</i>`,
-        { reply_markup: { inline_keyboard: [[{ text: '← Kembali', callback_data: 'back_main' }]] } }
+    await sendOrEdit(chatId, userId,
+        `⎔ Error: Gagal menghubungi server. Coba lagi.\n\n<i>${err.message}</i>`,
+        { reply_markup: { inline_keyboard: [[{ text: '← Back', callback_data: 'back_main' }]] } }
       );
     }
     return;
@@ -594,10 +587,10 @@ bot.on('message', async (msg) => {
   if (userState[userId] === 'awaiting_2fa') {
     const input = text.toUpperCase().replace(/\s+/g, '');
     if (!isValid2FASecret(input)) {
-      await sendOrEdit(chatId, userId,
-        `Error: This is not 2FA Secret !\n\n<i>Coba lagi atau kembali ke menu.</i>`,
-        { reply_markup: { inline_keyboard: [[{ text: '← Kembali', callback_data: 'back_main' }]] } }
-      );
+    await sendOrEdit(chatId, userId,
+      `⎔ Secret tidak valid.\n\nCoba lagi atau kembali ke menu.`,
+      { reply_markup: { inline_keyboard: [[{ text: '← Back', callback_data: 'back_main' }]] } }
+    );
       return;
     }
     delete userState[userId];
