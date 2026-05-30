@@ -214,12 +214,40 @@ function timerBar(secs) {
   return '█'.repeat(filled) + '░'.repeat(empty) + `  ${secs}s`;
 }
 
+// Cek join channel — di-cache di Redis 5 menit supaya tidak getChatMember
+// di setiap pesan (sumber utama latency). memJoin = fallback in-memory.
+const JOIN_TTL = 5 * 60; // 5 menit
+const memJoin  = new Map(); // userId → { ok, exp }
+
 async function hasJoined(userId) {
+  // 1) cek cache
+  if (redis) {
+    try {
+      const c = await redis.get(`join:${userId}`);
+      if (c === '1') return true;
+      if (c === '0') return false;
+    } catch {}
+  } else {
+    const c = memJoin.get(userId);
+    if (c && c.exp > Date.now()) return c.ok;
+  }
+
+  // 2) cache miss → tanya Telegram
+  let ok = true;
   try {
     const m = await bot.getChatMember(CHANNEL, userId);
-    if (m.status === 'kicked' || m.status === 'left') return false;
-    return true;
-  } catch { return true; }
+    ok = !(m.status === 'kicked' || m.status === 'left');
+  } catch {
+    ok = true; // kalau error (mis. bot bukan admin), jangan blokir user
+  }
+
+  // 3) simpan ke cache
+  if (redis) {
+    try { await redis.set(`join:${userId}`, ok ? '1' : '0', 'EX', JOIN_TTL); } catch {}
+  } else {
+    memJoin.set(userId, { ok, exp: Date.now() + JOIN_TTL * 1000 });
+  }
+  return ok;
 }
 
 // ─────────────────────────────────────────
@@ -273,6 +301,14 @@ async function clearState(userId) {
   delete memState[userId];
   if (redis) {
     try { await redis.del(`state:${userId}`); } catch {}
+  }
+}
+
+// Hapus cache status join (dipakai saat user klik "Sudah Join")
+async function clearJoinCache(userId) {
+  memJoin.delete(userId);
+  if (redis) {
+    try { await redis.del(`join:${userId}`); } catch {}
   }
 }
 
@@ -464,6 +500,7 @@ bot.on('callback_query', async (query) => {
 
   // ── check_join ──
   if (data === 'check_join') {
+    await clearJoinCache(userId); // pastikan cek fresh, bukan dari cache
     const joined = await hasJoined(userId);
     if (!joined) {
       return bot.answerCallbackQuery(query.id, {

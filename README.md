@@ -271,7 +271,22 @@ pm2 logs 2fa-bot --lines 20
 ```bash
 cd ~/Bot-2fa
 git pull origin main
+npm install            # WAJIB: install dependency baru (mis. ioredis)
 pm2 restart 2fa-bot
+pm2 logs 2fa-bot --lines 20
+```
+
+> Kalau respon bot lambat & Docker/Local Bot API belum jalan, jalankan installer:
+> ```bash
+> cd ~/Bot-2fa && bash setup-vps.sh && pm2 restart 2fa-bot
+> ```
+
+### Cek status cepat
+```bash
+redis-cli ping                 # harus: PONG
+docker ps                      # container telegram-bot-api harus "Up"
+curl -s localhost:8081 -o /dev/null -w "%{http_code}\n"   # Local Bot API hidup
+pm2 logs 2fa-bot --lines 20    # cek "Bot API" & "Redis" di log
 ```
 
 ---
