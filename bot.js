@@ -1,5 +1,7 @@
-// Load .env hanya kalau tidak diset dari luar (PM2 ecosystem)
-if (!process.env.BOT_TOKEN) require('dotenv').config();
+// Selalu load .env dan OVERRIDE env lama (mis. cache PM2) supaya perubahan
+// di .env (OWNER_ID, dll) langsung kebaca walau cuma `pm2 restart`.
+// .env = sumber kebenaran. Kalau file .env tidak ada, env dari luar tetap dipakai.
+require('dotenv').config({ override: true });
 
 const TelegramBot = require('node-telegram-bot-api');
 const { TOTP, Secret } = require('otpauth');
