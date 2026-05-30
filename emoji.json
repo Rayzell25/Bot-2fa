@@ -1,0 +1,16 @@
+{
+  "_comment": "Daftar custom emoji bot. Isi 'id' dengan custom_emoji_id ASLI dari pack Telegram Premium (lihat README atau pakai /emoji). Kalau 'id' kosong/null, bot pakai 'fallback' (emoji unicode biasa).",
+  "lock":    { "id": "", "fallback": "🔐" },
+  "pin":     { "id": "", "fallback": "📍" },
+  "globe":   { "id": "", "fallback": "🌐" },
+  "star":    { "id": "", "fallback": "⭐" },
+  "fire":    { "id": "", "fallback": "🔥" },
+  "rocket":  { "id": "", "fallback": "🚀" },
+  "warning": { "id": "", "fallback": "⚠️" },
+  "wave":    { "id": "", "fallback": "👋" },
+  "refresh": { "id": "", "fallback": "🔄" },
+  "timer":   { "id": "", "fallback": "⏱️" },
+  "map":     { "id": "", "fallback": "🗺️" },
+  "id":      { "id": "", "fallback": "🪪" },
+  "channel": { "id": "", "fallback": "📢" }
+}

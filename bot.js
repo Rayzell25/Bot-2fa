@@ -5,6 +5,8 @@ const TelegramBot = require('node-telegram-bot-api');
 const { TOTP, Secret } = require('otpauth');
 const axios = require('axios');
 const Redis = require('ioredis');
+const fs    = require('fs');
+const path  = require('path');
 
 const BOT_TOKEN    = process.env.BOT_TOKEN    || '8643566619:AAHy98hpFwLsjHZwTl5XogtgoY60mNzsh9A';
 const OWNER_ID     = parseInt(process.env.OWNER_ID || '1334793299');
@@ -320,28 +322,41 @@ function stopSession(userId) {
 }
 
 // ─────────────────────────────────────────
-//   CUSTOM EMOJI — document_id map
-//   Sumber: Telegram Premium emoji set (tersedia untuk semua bot via HTML tag)
-//   Format HTML: <tg-emoji emoji-id="ID">FALLBACK_UNICODE</tg-emoji>
-//   • User Premium  → lihat animasi custom emoji
-//   • User biasa    → lihat fallback unicode emoji (graceful degradation)
+//   CUSTOM EMOJI — load dari emoji.json
+//   Format file: { "key": { "id": "<custom_emoji_id>", "fallback": "🔐" }, ... }
+//   • id terisi  → render <tg-emoji emoji-id="ID">FALLBACK</tg-emoji> (Premium user lihat animasi)
+//   • id kosong  → pakai fallback unicode polos (semua user lihat sama)
+//   Cara dapat id asli: pakai /emoji (lihat README).
 //   Referensi: https://core.telegram.org/bots/api#messageentity (type: custom_emoji)
 // ─────────────────────────────────────────
-const E = {
-  lock    : `<tg-emoji emoji-id="5472164874886846699">🔐</tg-emoji>`,
-  pin     : `<tg-emoji emoji-id="5411213768794914046">📍</tg-emoji>`,
-  globe   : `<tg-emoji emoji-id="5472055112702629499">🌐</tg-emoji>`,
-  star    : `<tg-emoji emoji-id="5368324170671202286">⭐</tg-emoji>`,
-  fire    : `<tg-emoji emoji-id="5471967900586827776">🔥</tg-emoji>`,
-  rocket  : `<tg-emoji emoji-id="5471979925685493248">🚀</tg-emoji>`,
-  warning : `<tg-emoji emoji-id="5447644880824906063">⚠️</tg-emoji>`,
-  wave    : `<tg-emoji emoji-id="5461151367559736960">👋</tg-emoji>`,
-  refresh : `<tg-emoji emoji-id="5472308992514464187">🔄</tg-emoji>`,
-  timer   : `<tg-emoji emoji-id="5420323339985704928">⏱️</tg-emoji>`,
-  map     : `<tg-emoji emoji-id="5411213768794914046">🗺️</tg-emoji>`,
-  id      : `<tg-emoji emoji-id="5472055112702629499">🪪</tg-emoji>`,
-  channel : `<tg-emoji emoji-id="5368324170671202286">📢</tg-emoji>`,
-};
+function escAttr(s)  { return String(s).replace(/"/g, '&quot;'); }
+function escHTML(s)  { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+function loadEmoji() {
+  const file = path.join(__dirname, 'emoji.json');
+  let cfg = {};
+  try {
+    cfg = JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch (e) {
+    console.warn('  Emoji         : emoji.json tidak ada / rusak — fallback unicode polos');
+  }
+  const out = {};
+  let withId = 0, total = 0;
+  for (const [key, val] of Object.entries(cfg)) {
+    if (key.startsWith('_') || !val || typeof val !== 'object') continue;
+    total++;
+    const fb = val.fallback || '';
+    if (val.id) {
+      out[key] = `<tg-emoji emoji-id="${escAttr(val.id)}">${escHTML(fb)}</tg-emoji>`;
+      withId++;
+    } else {
+      out[key] = escHTML(fb);
+    }
+  }
+  console.log(`  Emoji         : loaded ${total} keys (${withId} pakai custom_emoji_id, ${total - withId} unicode)`);
+  return out;
+}
+const E = loadEmoji();
 
 // ─────────────────────────────────────────
 //   KEYBOARDS
@@ -388,6 +403,61 @@ async function sendOrEdit(chatId, userId, text, opts = {}) {
   await setMsg(userId, sent.message_id);
   return sent.message_id;
 }
+
+// ─────────────────────────────────────────
+//   /emoji — OWNER only, extract custom_emoji_id
+//   Cara pakai (3 opsi):
+//     1) Forward pesan dari chat lain yang ada custom emoji ke bot,
+//        lalu reply pesan tsb dengan teks: /emoji
+//     2) Reply pesan apapun yang punya custom emoji + ketik: /emoji
+//     3) Ketik /emoji <baris emoji premium kamu>  (kalau OWNER pakai Telegram Premium)
+// ─────────────────────────────────────────
+function extractCustomEmoji(message) {
+  const out = [];
+  const sources = [message.reply_to_message, message].filter(Boolean);
+  for (const m of sources) {
+    const ents = m.entities || m.caption_entities || [];
+    const txt  = m.text || m.caption || '';
+    for (const e of ents) {
+      if (e.type === 'custom_emoji') {
+        const fb = txt.substring(e.offset, e.offset + e.length);
+        out.push({ id: e.custom_emoji_id, fallback: fb });
+      }
+    }
+  }
+  return out;
+}
+
+bot.onText(/^\/emoji\b/, async (msg) => {
+  if (msg.from.id !== OWNER_ID) return; // OWNER only
+  const chatId = msg.chat.id;
+  const found  = extractCustomEmoji(msg);
+
+  if (found.length === 0) {
+    return bot.sendMessage(chatId,
+      `⚠️ <b>Tidak ada custom emoji ditemukan.</b>\n\n` +
+      `Cara pakai:\n` +
+      `• Forward pesan ber-custom-emoji ke sini, lalu reply: <code>/emoji</code>\n` +
+      `• Atau ketik <code>/emoji</code> lalu emoji Premium di baris yang sama (butuh Telegram Premium)`,
+      { parse_mode: 'HTML' }
+    );
+  }
+
+  const lines = found.map((e, i) =>
+    `${i + 1}. <code>${escHTML(e.fallback)}</code>  →  <code>${e.id}</code>`
+  ).join('\n');
+
+  await bot.sendMessage(chatId,
+    `✅ <b>Ditemukan ${found.length} custom emoji:</b>\n\n${lines}\n\n` +
+    `<b>Pasang ke <code>emoji.json</code>:</b>\n` +
+    `<pre>${escHTML(JSON.stringify(
+      found.reduce((a, e, i) => (a[`emoji_${i+1}`] = { id: e.id, fallback: e.fallback }, a), {}),
+      null, 2
+    ))}</pre>\n\n` +
+    `Lalu: <code>pm2 restart 2fa-bot</code>`,
+    { parse_mode: 'HTML' }
+  );
+});
 
 // ─────────────────────────────────────────
 //   /start

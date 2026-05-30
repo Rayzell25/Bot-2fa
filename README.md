@@ -266,6 +266,49 @@ pm2 logs 2fa-bot --lines 20
 
 ---
 
+## 🎨 Custom Emoji (Telegram Premium)
+
+Bot ini support **animated custom emoji** lewat tag `<tg-emoji emoji-id>`. Tapi ada 2 hal penting:
+
+1. **Hanya user Telegram Premium** yang melihat animasi. User biasa tetap lihat emoji unicode normal — itu memang batasan Telegram, bukan bug.
+2. **`emoji-id` harus ID asli** dari pack emoji Telegram. ID yang ngarang akan diabaikan dan jatuh ke fallback unicode.
+
+### Cara dapat `custom_emoji_id` asli (perlu OWNER + Telegram Premium)
+
+**Opsi A — pakai bot ini sendiri:**
+1. Buka chat apapun yang ada custom emoji-nya (mis. dari sticker pack `t.me/addemoji/...`).
+2. **Forward** pesan tsb ke bot kamu.
+3. **Reply** pesan yang ke-forward tadi, ketik: `/emoji`
+4. Bot balas dengan daftar `custom_emoji_id` + JSON siap-tempel ke `emoji.json`.
+
+> Command `/emoji` hanya bisa dipakai oleh `OWNER_ID` di `.env`.
+
+**Opsi B — pakai @JsonDumpBot:**
+1. Forward pesan ber-custom-emoji ke [@JsonDumpBot](https://t.me/JsonDumpBot).
+2. Cari field `entities` → `custom_emoji_id` di JSON yang dibalas.
+
+### Pasang ID ke bot
+
+Edit `emoji.json`:
+```json
+{
+  "lock":    { "id": "5472164874886846699", "fallback": "🔐" },
+  "pin":     { "id": "5411213768794914046", "fallback": "📍" },
+  "globe":   { "id": "",                    "fallback": "🌐" }
+}
+```
+- `id` kosong → bot pakai emoji unicode polos (tetap jalan, cuma tidak animasi).
+- `id` terisi → user Premium lihat animasi, user biasa tetap lihat fallback.
+
+Lalu restart:
+```bash
+pm2 restart 2fa-bot
+```
+
+Cek log: `Emoji : loaded N keys (X pakai custom_emoji_id, Y unicode)`.
+
+---
+
 ## 🔄 Update Bot
 
 ```bash
