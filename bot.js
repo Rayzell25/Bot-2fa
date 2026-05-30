@@ -5,6 +5,8 @@ const TelegramBot = require('node-telegram-bot-api');
 const { TOTP, Secret } = require('otpauth');
 const axios = require('axios');
 const Redis = require('ioredis');
+const fs    = require('fs');
+const path  = require('path');
 
 const BOT_TOKEN    = process.env.BOT_TOKEN    || '8643566619:AAHy98hpFwLsjHZwTl5XogtgoY60mNzsh9A';
 const OWNER_ID     = parseInt(process.env.OWNER_ID || '1334793299');
@@ -214,12 +216,40 @@ function timerBar(secs) {
   return '█'.repeat(filled) + '░'.repeat(empty) + `  ${secs}s`;
 }
 
+// Cek join channel — di-cache di Redis 5 menit supaya tidak getChatMember
+// di setiap pesan (sumber utama latency). memJoin = fallback in-memory.
+const JOIN_TTL = 5 * 60; // 5 menit
+const memJoin  = new Map(); // userId → { ok, exp }
+
 async function hasJoined(userId) {
+  // 1) cek cache
+  if (redis) {
+    try {
+      const c = await redis.get(`join:${userId}`);
+      if (c === '1') return true;
+      if (c === '0') return false;
+    } catch {}
+  } else {
+    const c = memJoin.get(userId);
+    if (c && c.exp > Date.now()) return c.ok;
+  }
+
+  // 2) cache miss → tanya Telegram
+  let ok = true;
   try {
     const m = await bot.getChatMember(CHANNEL, userId);
-    if (m.status === 'kicked' || m.status === 'left') return false;
-    return true;
-  } catch { return true; }
+    ok = !(m.status === 'kicked' || m.status === 'left');
+  } catch {
+    ok = true; // kalau error (mis. bot bukan admin), jangan blokir user
+  }
+
+  // 3) simpan ke cache
+  if (redis) {
+    try { await redis.set(`join:${userId}`, ok ? '1' : '0', 'EX', JOIN_TTL); } catch {}
+  } else {
+    memJoin.set(userId, { ok, exp: Date.now() + JOIN_TTL * 1000 });
+  }
+  return ok;
 }
 
 // ─────────────────────────────────────────
@@ -276,6 +306,14 @@ async function clearState(userId) {
   }
 }
 
+// Hapus cache status join (dipakai saat user klik "Sudah Join")
+async function clearJoinCache(userId) {
+  memJoin.delete(userId);
+  if (redis) {
+    try { await redis.del(`join:${userId}`); } catch {}
+  }
+}
+
 function stopSession(userId) {
   if (sessions[userId]) {
     clearInterval(sessions[userId].timer);
@@ -284,28 +322,41 @@ function stopSession(userId) {
 }
 
 // ─────────────────────────────────────────
-//   CUSTOM EMOJI — document_id map
-//   Sumber: Telegram Premium emoji set (tersedia untuk semua bot via HTML tag)
-//   Format HTML: <tg-emoji emoji-id="ID">FALLBACK_UNICODE</tg-emoji>
-//   • User Premium  → lihat animasi custom emoji
-//   • User biasa    → lihat fallback unicode emoji (graceful degradation)
+//   CUSTOM EMOJI — load dari emoji.json
+//   Format file: { "key": { "id": "<custom_emoji_id>", "fallback": "🔐" }, ... }
+//   • id terisi  → render <tg-emoji emoji-id="ID">FALLBACK</tg-emoji> (Premium user lihat animasi)
+//   • id kosong  → pakai fallback unicode polos (semua user lihat sama)
+//   Cara dapat id asli: pakai /emoji (lihat README).
 //   Referensi: https://core.telegram.org/bots/api#messageentity (type: custom_emoji)
 // ─────────────────────────────────────────
-const E = {
-  lock    : `<tg-emoji emoji-id="5472164874886846699">🔐</tg-emoji>`,
-  pin     : `<tg-emoji emoji-id="5411213768794914046">📍</tg-emoji>`,
-  globe   : `<tg-emoji emoji-id="5472055112702629499">🌐</tg-emoji>`,
-  star    : `<tg-emoji emoji-id="5368324170671202286">⭐</tg-emoji>`,
-  fire    : `<tg-emoji emoji-id="5471967900586827776">🔥</tg-emoji>`,
-  rocket  : `<tg-emoji emoji-id="5471979925685493248">🚀</tg-emoji>`,
-  warning : `<tg-emoji emoji-id="5447644880824906063">⚠️</tg-emoji>`,
-  wave    : `<tg-emoji emoji-id="5461151367559736960">👋</tg-emoji>`,
-  refresh : `<tg-emoji emoji-id="5472308992514464187">🔄</tg-emoji>`,
-  timer   : `<tg-emoji emoji-id="5420323339985704928">⏱️</tg-emoji>`,
-  map     : `<tg-emoji emoji-id="5411213768794914046">🗺️</tg-emoji>`,
-  id      : `<tg-emoji emoji-id="5472055112702629499">🪪</tg-emoji>`,
-  channel : `<tg-emoji emoji-id="5368324170671202286">📢</tg-emoji>`,
-};
+function escAttr(s)  { return String(s).replace(/"/g, '&quot;'); }
+function escHTML(s)  { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+function loadEmoji() {
+  const file = path.join(__dirname, 'emoji.json');
+  let cfg = {};
+  try {
+    cfg = JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch (e) {
+    console.warn('  Emoji         : emoji.json tidak ada / rusak — fallback unicode polos');
+  }
+  const out = {};
+  let withId = 0, total = 0;
+  for (const [key, val] of Object.entries(cfg)) {
+    if (key.startsWith('_') || !val || typeof val !== 'object') continue;
+    total++;
+    const fb = val.fallback || '';
+    if (val.id) {
+      out[key] = `<tg-emoji emoji-id="${escAttr(val.id)}">${escHTML(fb)}</tg-emoji>`;
+      withId++;
+    } else {
+      out[key] = escHTML(fb);
+    }
+  }
+  console.log(`  Emoji         : loaded ${total} keys (${withId} pakai custom_emoji_id, ${total - withId} unicode)`);
+  return out;
+}
+const E = loadEmoji();
 
 // ─────────────────────────────────────────
 //   KEYBOARDS
@@ -352,6 +403,80 @@ async function sendOrEdit(chatId, userId, text, opts = {}) {
   await setMsg(userId, sent.message_id);
   return sent.message_id;
 }
+
+// ─────────────────────────────────────────
+//   /emoji — extract custom_emoji_id (terbuka untuk semua)
+//   Cara pakai (3 opsi):
+//     1) Forward pesan dari chat lain yang ada custom emoji ke bot,
+//        lalu reply pesan tsb dengan teks: /emoji
+//     2) Reply pesan apapun yang punya custom emoji + ketik: /emoji
+//     3) Ketik /emoji <baris emoji premium kamu>  (kalau pakai Telegram Premium)
+// ─────────────────────────────────────────
+function extractCustomEmoji(message) {
+  const out = [];
+  const sources = [message.reply_to_message, message].filter(Boolean);
+  for (const m of sources) {
+    const ents = m.entities || m.caption_entities || [];
+    const txt  = m.text || m.caption || '';
+    for (const e of ents) {
+      if (e.type === 'custom_emoji') {
+        const fb = txt.substring(e.offset, e.offset + e.length);
+        out.push({ id: e.custom_emoji_id, fallback: fb });
+      }
+    }
+  }
+  return out;
+}
+
+bot.onText(/^\/emoji(?:@\w+)?\b/, async (msg) => {
+  const chatId = msg.chat.id;
+  const userId = msg.from.id;
+  console.log(`[/emoji] from user ${userId} (owner=${OWNER_ID}) in chat ${chatId}`);
+
+  const found = extractCustomEmoji(msg);
+
+  if (found.length === 0) {
+    return bot.sendMessage(chatId,
+      `⚠️ <b>Tidak ada custom emoji ditemukan.</b>\n\n` +
+      `<b>Cara pakai:</b>\n` +
+      `1. Forward pesan ber-custom-emoji ke chat ini\n` +
+      `2. Reply pesan yang ke-forward → ketik <code>/emoji</code>\n\n` +
+      `Atau, kalau kamu Telegram Premium: ketik <code>/emoji</code> lalu emoji premium-nya di baris berikutnya.\n\n` +
+      `<i>User ID kamu: <code>${userId}</code></i>`,
+      { parse_mode: 'HTML' }
+    );
+  }
+
+  const lines = found.map((e, i) =>
+    `${i + 1}. <code>${escHTML(e.fallback)}</code>  →  <code>${e.id}</code>`
+  ).join('\n');
+
+  await bot.sendMessage(chatId,
+    `✅ <b>Ditemukan ${found.length} custom emoji:</b>\n\n${lines}\n\n` +
+    `<b>Pasang ke <code>emoji.json</code>:</b>\n` +
+    `<pre>${escHTML(JSON.stringify(
+      found.reduce((a, e, i) => (a[`emoji_${i+1}`] = { id: e.id, fallback: e.fallback }, a), {}),
+      null, 2
+    ))}</pre>\n\n` +
+    `Lalu: <code>pm2 restart 2fa-bot</code>`,
+    { parse_mode: 'HTML' }
+  );
+});
+
+// ─────────────────────────────────────────
+//   /whoami — utility, cek apakah ID kamu = OWNER_ID
+// ─────────────────────────────────────────
+bot.onText(/^\/whoami(?:@\w+)?\b/, async (msg) => {
+  const userId = msg.from.id;
+  const isOwner = userId === OWNER_ID;
+  console.log(`[/whoami] from user ${userId} (owner=${OWNER_ID})`);
+  await bot.sendMessage(msg.chat.id,
+    `<b>User ID kamu:</b> <code>${userId}</code>\n` +
+    `<b>OWNER_ID di .env:</b> <code>${OWNER_ID}</code>\n` +
+    `<b>Status:</b> ${isOwner ? '✅ kamu adalah OWNER' : '❌ kamu BUKAN owner — set OWNER_ID di .env ke ' + userId}`,
+    { parse_mode: 'HTML' }
+  );
+});
 
 // ─────────────────────────────────────────
 //   /start
@@ -464,6 +589,7 @@ bot.on('callback_query', async (query) => {
 
   // ── check_join ──
   if (data === 'check_join') {
+    await clearJoinCache(userId); // pastikan cek fresh, bukan dari cache
     const joined = await hasJoined(userId);
     if (!joined) {
       return bot.answerCallbackQuery(query.id, {
