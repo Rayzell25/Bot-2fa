@@ -199,6 +199,73 @@ pm2 save
 
 ---
 
+## ⚡ Performa: Redis + Local Bot API (opsional, sangat direkomendasikan)
+
+Dua hal ini bikin bot **jauh lebih responsif** terutama di VPS jauh:
+
+| Komponen | Fungsi |
+|----------|--------|
+| **Redis** | Cache session/state user → bot tetap "ingat" state walau di-restart |
+| **Local Bot API** | Menghilangkan latency request ke `api.telegram.org` (jadi `localhost`) |
+
+### A. Install Redis
+```bash
+apt install redis-server -y && systemctl start redis && systemctl enable redis
+redis-cli ping     # harus balas: PONG
+```
+
+### B. Install Docker (untuk Local Bot API)
+```bash
+curl -fsSL https://get.docker.com | bash
+```
+
+### C. Jalankan Local Bot API
+
+> Ambil `API_ID` & `API_HASH` dari https://my.telegram.org → **API development tools**
+
+```bash
+docker run -d \
+  --name telegram-bot-api \
+  --restart always \
+  -p 127.0.0.1:8081:8081 \
+  -e TELEGRAM_API_ID=API_ID_KAMU \
+  -e TELEGRAM_API_HASH=API_HASH_KAMU \
+  -e TELEGRAM_LOCAL=1 \
+  -v /root/bot-api-data:/var/lib/telegram-bot-api \
+  -v /root/bot-api-temp:/tmp/telegram-bot-api \
+  aiogram/telegram-bot-api:latest
+```
+
+Cek status:
+```bash
+docker ps                     # container harus "Up"
+docker logs telegram-bot-api  # tidak boleh ada error
+```
+
+### D. Tambahkan ke `.env` bot kamu
+```env
+REDIS_URL=redis://127.0.0.1:6379
+BOT_API_ROOT=http://localhost:8081
+```
+
+### E. Restart bot
+```bash
+cd ~/Bot-2fa
+npm install      # install ioredis (kalau habis git pull)
+pm2 restart 2fa-bot
+pm2 logs 2fa-bot --lines 20
+```
+
+✅ Kalau berhasil, log akan menampilkan:
+```
+  Bot API       : http://localhost:8081
+  Redis         : connected → redis://127.0.0.1:6379
+```
+
+> 💡 **Otomatis:** Jalankan `bash setup-vps.sh` untuk install Redis + Docker + Local Bot API sekaligus.
+
+---
+
 ## 🔄 Update Bot
 
 ```bash
@@ -239,6 +306,7 @@ pm2 monit               # monitor real-time
 ```
 Bot-2fa/
 ├── bot.js          # File utama bot
+├── setup-vps.sh    # Installer Redis + Docker + Local Bot API
 ├── package.json    # Dependencies
 ├── .env            # Konfigurasi (jangan di-share!)
 ├── .env.example    # Contoh konfigurasi
