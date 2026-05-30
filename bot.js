@@ -4,11 +4,37 @@ if (!process.env.BOT_TOKEN) require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const { TOTP, Secret } = require('otpauth');
 const axios = require('axios');
+const Redis = require('ioredis');
 
 const BOT_TOKEN    = process.env.BOT_TOKEN    || '8643566619:AAHy98hpFwLsjHZwTl5XogtgoY60mNzsh9A';
 const OWNER_ID     = parseInt(process.env.OWNER_ID || '1334793299');
 const BOT_USERNAME = process.env.BOT_USERNAME  || 'auotorderbot';
 const CHANNEL      = process.env.CHANNEL       || '@RayzellStores';
+
+// ─────────────────────────────────────────
+//   LOCAL BOT API (eliminasi latency)
+// ─────────────────────────────────────────
+// Isi BOT_API_ROOT dengan URL Local Bot API kamu, mis. http://localhost:8081
+// Kosongkan untuk pakai server resmi https://api.telegram.org
+const BOT_API_ROOT = process.env.BOT_API_ROOT || '';
+console.log('  Bot API       :', BOT_API_ROOT || 'https://api.telegram.org (resmi)');
+
+// ─────────────────────────────────────────
+//   REDIS (cache session/state)
+// ─────────────────────────────────────────
+const REDIS_URL = process.env.REDIS_URL || '';
+let redis = null;
+if (REDIS_URL) {
+  redis = new Redis(REDIS_URL, {
+    maxRetriesPerRequest: 2,
+    enableOfflineQueue: false,
+    lazyConnect: false,
+  });
+  redis.on('connect', () => console.log('  Redis         : connected →', REDIS_URL));
+  redis.on('error', (err) => console.error('  Redis error   :', err.message));
+} else {
+  console.log('  Redis         : disabled (in-memory fallback)');
+}
 
 // ─────────────────────────────────────────
 //   WEBHOOK / POLLING (auto-detect)
@@ -21,7 +47,10 @@ console.log('  Mode          :', WEBHOOK_URL ? `webhook (${WEBHOOK_URL})` : 'pol
 let bot;
 if (WEBHOOK_URL) {
   // WEBHOOK mode — respon instan, direkomendasikan di VPS
-  bot = new TelegramBot(BOT_TOKEN, { webHook: { port: WEBHOOK_PORT } });
+  bot = new TelegramBot(BOT_TOKEN, {
+    baseApiUrl: BOT_API_ROOT || undefined,
+    webHook: { port: WEBHOOK_PORT },
+  });
   bot.setWebHook(`${WEBHOOK_URL}/bot${BOT_TOKEN}`)
     .then(() => console.log(`  Webhook aktif : ${WEBHOOK_URL}/bot${BOT_TOKEN}`))
     .catch(err => console.error('  Webhook error:', err.message));
@@ -29,6 +58,7 @@ if (WEBHOOK_URL) {
   // POLLING mode — fallback jika WEBHOOK_URL tidak diset
   // Long polling — interval 0 + timeout 60 detik = respon hampir instan
   bot = new TelegramBot(BOT_TOKEN, {
+    baseApiUrl: BOT_API_ROOT || undefined,
     polling: {
       interval: 0,
       autoStart: true,
@@ -196,9 +226,55 @@ async function hasJoined(userId) {
 //   SESSIONS
 // ─────────────────────────────────────────
 
-const sessions   = {}; // OTP sessions
-const msgCache   = {}; // userId → msgId (pesan utama, untuk di-edit)
-const userState  = {}; // userId → state string ('awaiting_ip', dll)
+const sessions   = {}; // OTP sessions (timer in-memory, tidak bisa di-cache)
+
+// ── State store: Redis kalau ada, fallback in-memory ──
+// msgCache  : userId → msgId (pesan utama, untuk di-edit)
+// userState : userId → state string ('awaiting_ip', 'awaiting_2fa')
+const memMsg   = {};
+const memState = {};
+
+const MSG_TTL   = 24 * 60 * 60; // 24 jam
+const STATE_TTL = 60 * 60;      // 1 jam
+
+async function getMsg(userId) {
+  if (redis) {
+    try {
+      const v = await redis.get(`msg:${userId}`);
+      return v ? parseInt(v) : undefined;
+    } catch { return memMsg[userId]; }
+  }
+  return memMsg[userId];
+}
+
+async function setMsg(userId, msgId) {
+  memMsg[userId] = msgId;
+  if (redis) {
+    try { await redis.set(`msg:${userId}`, msgId, 'EX', MSG_TTL); } catch {}
+  }
+}
+
+async function getState(userId) {
+  if (redis) {
+    try { return (await redis.get(`state:${userId}`)) || undefined; }
+    catch { return memState[userId]; }
+  }
+  return memState[userId];
+}
+
+async function setState(userId, state) {
+  memState[userId] = state;
+  if (redis) {
+    try { await redis.set(`state:${userId}`, state, 'EX', STATE_TTL); } catch {}
+  }
+}
+
+async function clearState(userId) {
+  delete memState[userId];
+  if (redis) {
+    try { await redis.del(`state:${userId}`); } catch {}
+  }
+}
 
 function stopSession(userId) {
   if (sessions[userId]) {
@@ -235,7 +311,7 @@ const joinOpts = {
 // ─────────────────────────────────────────
 
 async function sendOrEdit(chatId, userId, text, opts = {}) {
-  const mid = msgCache[userId];
+  const mid = await getMsg(userId);
   if (mid) {
     try {
       await bot.editMessageText(text, {
@@ -249,7 +325,7 @@ async function sendOrEdit(chatId, userId, text, opts = {}) {
   }
   // Kirim baru kalau belum ada atau gagal edit
   const sent = await bot.sendMessage(chatId, text, { parse_mode: 'HTML', ...opts });
-  msgCache[userId] = sent.message_id;
+  await setMsg(userId, sent.message_id);
   return sent.message_id;
 }
 
@@ -270,7 +346,7 @@ bot.onText(/\/start/, async (msg) => {
       `⎔ Gabung dulu yuk!\n\nKamu harus join channel kami sebelum pakai bot ini.`,
       joinOpts
     );
-    msgCache[userId] = sent.message_id;
+    await setMsg(userId, sent.message_id);
     return;
   }
 
@@ -370,7 +446,7 @@ bot.on('callback_query', async (query) => {
       });
     }
     await bot.answerCallbackQuery(query.id, { text: 'Berhasil! Selamat datang.' });
-    msgCache[userId] = msgId;
+    await setMsg(userId, msgId);
     await sendOrEdit(chatId, userId,
       `⎔ Halo, <b>${name}</b>!\n\nPilih fitur di bawah.`,
       { reply_markup: mainMenu }
@@ -381,10 +457,9 @@ bot.on('callback_query', async (query) => {
   // ── menu_2fa ──
   if (data === 'menu_2fa') {
     await bot.answerCallbackQuery(query.id);
-    msgCache[userId] = msgId;
+    await setMsg(userId, msgId);
     stopSession(userId);
-    delete userState[userId]; // reset state
-    userState[userId] = 'awaiting_2fa'; // set state 2FA
+    await setState(userId, 'awaiting_2fa');
     await sendOrEdit(chatId, userId,
       `⎔ <b>Generate 2FA</b>\n\nKirim secret key 2FA kamu.\n\n⊹ Contoh: <code>JBSWY3DPEHPK3PXP</code>`,
       { reply_markup: { inline_keyboard: [[{ text: '← Back', callback_data: 'back_main' }]] } }
@@ -395,7 +470,7 @@ bot.on('callback_query', async (query) => {
   // ── menu_address ──
   if (data === 'menu_address') {
     await bot.answerCallbackQuery(query.id);
-    msgCache[userId] = msgId;
+    await setMsg(userId, msgId);
     await sendOrEdit(chatId, userId,
       `⎔ <b>Random Address</b>\n\nPilih jumlah alamat.`,
       {
@@ -426,7 +501,7 @@ bot.on('callback_query', async (query) => {
     const n    = parseInt(data.replace('addr_', ''));
     const last = data; // simpan untuk tombol Generate Baru
     await bot.answerCallbackQuery(query.id);
-    msgCache[userId] = msgId;
+    await setMsg(userId, msgId);
 
     const addrs = generateAddresses(n);
     const text  = addrs.map((a, i) => formatAddress(a, i + 1)).join('\n\n');
@@ -443,9 +518,9 @@ bot.on('callback_query', async (query) => {
   // ── back_main ──
   if (data === 'back_main') {
     await bot.answerCallbackQuery(query.id);
-    msgCache[userId] = msgId;
+    await setMsg(userId, msgId);
     stopSession(userId);
-    delete userState[userId];
+    await clearState(userId);
     await sendOrEdit(chatId, userId,
       `⎔ Halo, <b>${name}</b>!\n\nPilih fitur di bawah.`,
       { reply_markup: mainMenu }
@@ -457,7 +532,7 @@ bot.on('callback_query', async (query) => {
   if (data === 'otp_back') {
     await bot.answerCallbackQuery(query.id);
     stopSession(userId);
-    msgCache[userId] = msgId;
+    await setMsg(userId, msgId);
     await sendOrEdit(chatId, userId,
       `⎔ Halo, <b>${name}</b>!\n\nPilih fitur di bawah.`,
       { reply_markup: mainMenu }
@@ -479,7 +554,7 @@ bot.on('callback_query', async (query) => {
     }
 
     await bot.answerCallbackQuery(query.id, { text: 'Refreshed!' });
-    msgCache[userId] = msgId;
+    await setMsg(userId, msgId);
     await startOtpSession(userId, chatId, base32);
     return;
   }
@@ -487,12 +562,12 @@ bot.on('callback_query', async (query) => {
   // ── menu_ip ──
   if (data === 'menu_ip') {
     await bot.answerCallbackQuery(query.id);
-    msgCache[userId] = msgId;
+    await setMsg(userId, msgId);
     await sendOrEdit(chatId, userId,
       `⎔ <b>Cek IP / ISP</b>\n\nKirim IP atau domain.\n\n⊹ <code>178.128.98.106</code>\n⊹ <code>google.com</code>`,
       { reply_markup: { inline_keyboard: [[{ text: '← Back', callback_data: 'back_main' }]] } }
     );
-    userState[userId] = 'awaiting_ip';
+    await setState(userId, 'awaiting_ip');
     return;
   }
 
@@ -520,9 +595,11 @@ bot.on('message', async (msg) => {
   // Hapus pesan user biar chat tetap rapi
   try { await bot.deleteMessage(chatId, msg.message_id); } catch (_) {}
 
+  const state = await getState(userId);
+
   // ── State: awaiting_ip ──
-  if (userState[userId] === 'awaiting_ip') {
-    delete userState[userId];
+  if (state === 'awaiting_ip') {
+    await clearState(userId);
     const query = text.trim();
     // Reset state dulu biar tidak nyangkut
 
@@ -584,7 +661,7 @@ bot.on('message', async (msg) => {
   }
 
   // ── State: awaiting_2fa ──
-  if (userState[userId] === 'awaiting_2fa') {
+  if (state === 'awaiting_2fa') {
     const input = text.toUpperCase().replace(/\s+/g, '');
     if (!isValid2FASecret(input)) {
     await sendOrEdit(chatId, userId,
@@ -593,7 +670,7 @@ bot.on('message', async (msg) => {
     );
       return;
     }
-    delete userState[userId];
+    await clearState(userId);
     await startOtpSession(userId, chatId, input);
     return;
   }
