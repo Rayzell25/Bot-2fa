@@ -266,6 +266,46 @@ pm2 logs 2fa-bot --lines 20
 
 ---
 
+## 🎨 Custom Emoji (Telegram Premium)
+
+Bot ini support **animated custom emoji** lewat tag `<tg-emoji emoji-id>`. Ada 2 hal penting:
+
+1. **Hanya user Telegram Premium** yang melihat animasi. User biasa tetap lihat emoji unicode normal — itu memang batasan Telegram, bukan bug.
+2. Emoji premium harus dikirim oleh akun yang **punya Telegram Premium** (cuma akun Premium yang bisa mengetik custom emoji).
+
+### Cara pasang — otomatis ✨
+
+> Wajib: kamu (OWNER) pakai **Telegram Premium**.
+
+1. Di chat bot, ketik `/emoji` lalu **tempel emoji-emoji premium** di belakangnya, **urut sesuai slot**:
+   ```
+   /emoji 🔐📍🌐⭐🔥🚀⚠️👋🔄⏱🗺🪪📢
+   ```
+   (pakai versi *premium* dari emoji-emoji itu)
+2. Bot otomatis ambil `custom_emoji_id`, simpan ke `emoji.local.json`, dan **langsung aktif tanpa restart**.
+3. Bot balas tabel slot mana dapat emoji mana. Ketik `/start` untuk lihat hasilnya.
+
+**Urutan slot:** `lock · pin · globe · star · fire · rocket · warning · wave · refresh · timer · map · id · channel`
+
+Boleh kirim sebagian saja (mis. `/emoji 🔐📍` → cuma isi 2 slot pertama), atau forward pesan ber-emoji-premium ke bot lalu **reply** `/emoji`.
+
+### Command terkait
+
+| Command | Fungsi |
+|---------|--------|
+| `/emoji 🔐📍🌐...` | Pasang custom emoji ke slot secara urut (OWNER) |
+| `/emoji reset` | Hapus semua custom emoji, balik ke unicode (OWNER) |
+| `/reload` | Muat ulang `emoji.json` + `emoji.local.json` tanpa restart (OWNER) |
+| `/whoami` | Cek user ID kamu vs `OWNER_ID` di `.env` |
+
+> `emoji.local.json` ditulis otomatis oleh bot saat runtime dan sudah masuk `.gitignore`, jadi tidak bentrok saat `git pull`.
+
+### Alternatif manual
+
+Edit `emoji.json`, isi `id` tiap slot dengan `custom_emoji_id` asli (dapat via [@JsonDumpBot](https://t.me/JsonDumpBot): forward pesan premium → cari `custom_emoji_id`), lalu `/reload` atau `pm2 restart 2fa-bot`.
+
+---
+
 ## 🔄 Update Bot
 
 ```bash

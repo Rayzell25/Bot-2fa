@@ -2,3 +2,6 @@ node_modules/
 .env
 *.log
 .DS_Store
+
+# Custom emoji override yang ditulis bot saat runtime (via /emoji)
+emoji.local.json

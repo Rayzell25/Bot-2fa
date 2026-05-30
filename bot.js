@@ -322,41 +322,53 @@ function stopSession(userId) {
 }
 
 // ─────────────────────────────────────────
-//   CUSTOM EMOJI — load dari emoji.json
-//   Format file: { "key": { "id": "<custom_emoji_id>", "fallback": "🔐" }, ... }
+//   CUSTOM EMOJI — load dari emoji.json (+ emoji.local.json)
+//   emoji.json        : default + fallback unicode (di-commit ke git)
+//   emoji.local.json  : { "key": "<custom_emoji_id>" } override runtime,
+//                       ditulis otomatis oleh command /emoji (di-gitignore).
 //   • id terisi  → render <tg-emoji emoji-id="ID">FALLBACK</tg-emoji> (Premium user lihat animasi)
 //   • id kosong  → pakai fallback unicode polos (semua user lihat sama)
-//   Cara dapat id asli: pakai /emoji (lihat README).
 //   Referensi: https://core.telegram.org/bots/api#messageentity (type: custom_emoji)
 // ─────────────────────────────────────────
-function escAttr(s)  { return String(s).replace(/"/g, '&quot;'); }
-function escHTML(s)  { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+const EMOJI_FILE       = path.join(__dirname, 'emoji.json');
+const EMOJI_LOCAL_FILE = path.join(__dirname, 'emoji.local.json');
 
-function loadEmoji() {
-  const file = path.join(__dirname, 'emoji.json');
-  let cfg = {};
-  try {
-    cfg = JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch (e) {
-    console.warn('  Emoji         : emoji.json tidak ada / rusak — fallback unicode polos');
-  }
-  const out = {};
+function escAttr(s) { return String(s).replace(/"/g, '&quot;'); }
+function escHTML(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+function readJsonSafe(file) {
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
+}
+
+let EMOJI_META = [];   // urut: [{ key, fallback }] — urutan slot untuk /emoji
+const E = {};          // key → string render (di-mutate live, jangan di-reassign)
+
+function reloadEmoji() {
+  const base  = readJsonSafe(EMOJI_FILE) || {};
+  const local = readJsonSafe(EMOJI_LOCAL_FILE) || {}; // { key: "id" }
+  const meta  = [];
+  const map   = {};
   let withId = 0, total = 0;
-  for (const [key, val] of Object.entries(cfg)) {
+
+  for (const [key, val] of Object.entries(base)) {
     if (key.startsWith('_') || !val || typeof val !== 'object') continue;
     total++;
     const fb = val.fallback || '';
-    if (val.id) {
-      out[key] = `<tg-emoji emoji-id="${escAttr(val.id)}">${escHTML(fb)}</tg-emoji>`;
-      withId++;
-    } else {
-      out[key] = escHTML(fb);
-    }
+    const id = String(local[key] || val.id || '').trim();
+    meta.push({ key, fallback: fb });
+    map[key] = id
+      ? `<tg-emoji emoji-id="${escAttr(id)}">${escHTML(fb)}</tg-emoji>`
+      : escHTML(fb);
+    if (id) withId++;
   }
-  console.log(`  Emoji         : loaded ${total} keys (${withId} pakai custom_emoji_id, ${total - withId} unicode)`);
-  return out;
+
+  EMOJI_META = meta;
+  for (const k of Object.keys(E)) delete E[k]; // mutate object yang sama
+  Object.assign(E, map);
+  console.log(`  Emoji         : loaded ${total} keys (${withId} custom_emoji_id, ${total - withId} unicode)`);
+  return { withId, total };
 }
-const E = loadEmoji();
+reloadEmoji();
 
 // ─────────────────────────────────────────
 //   KEYBOARDS
@@ -405,62 +417,115 @@ async function sendOrEdit(chatId, userId, text, opts = {}) {
 }
 
 // ─────────────────────────────────────────
-//   /emoji — extract custom_emoji_id (terbuka untuk semua)
-//   Cara pakai (3 opsi):
-//     1) Forward pesan dari chat lain yang ada custom emoji ke bot,
-//        lalu reply pesan tsb dengan teks: /emoji
-//     2) Reply pesan apapun yang punya custom emoji + ketik: /emoji
-//     3) Ketik /emoji <baris emoji premium kamu>  (kalau pakai Telegram Premium)
+//   /emoji — OWNER only: pasang custom emoji premium otomatis
+//   Cara pakai (butuh Telegram Premium):
+//     • Ketik /emoji lalu tempel emoji-emoji PREMIUM di belakangnya:
+//         /emoji 🔐📍🌐⭐🔥🚀⚠️👋🔄⏱🗺🪪📢
+//       Emoji diisi ke slot SECARA URUT (lihat daftar EMOJI_META).
+//     • Atau forward pesan ber-emoji-premium ke bot, lalu reply /emoji
+//     • /emoji reset  → balik ke emoji unicode biasa
+//   Bot otomatis simpan ke emoji.local.json + langsung aktif (tanpa restart).
 // ─────────────────────────────────────────
 function extractCustomEmoji(message) {
-  const out = [];
-  const sources = [message.reply_to_message, message].filter(Boolean);
-  for (const m of sources) {
-    const ents = m.entities || m.caption_entities || [];
+  const pick = (m) => {
+    if (!m) return [];
     const txt  = m.text || m.caption || '';
-    for (const e of ents) {
-      if (e.type === 'custom_emoji') {
-        const fb = txt.substring(e.offset, e.offset + e.length);
-        out.push({ id: e.custom_emoji_id, fallback: fb });
-      }
-    }
-  }
-  return out;
+    const ents = (m.entities || m.caption_entities || []).filter(e => e.type === 'custom_emoji');
+    return ents
+      .sort((a, b) => a.offset - b.offset)
+      .map(e => ({ id: e.custom_emoji_id, base: txt.substr(e.offset, e.length) }));
+  };
+  const own = pick(message);              // prioritas: emoji di pesan /emoji itu sendiri
+  return own.length ? own : pick(message.reply_to_message);
 }
 
-bot.onText(/^\/emoji(?:@\w+)?\b/, async (msg) => {
+function ownerGuard(msg) {
+  const userId = msg.from.id;
+  if (userId === OWNER_ID) return true;
+  bot.sendMessage(msg.chat.id,
+    `🔒 Command ini khusus <b>OWNER</b>.\n\n` +
+    `User ID kamu: <code>${userId}</code>\n` +
+    `OWNER_ID di .env: <code>${OWNER_ID}</code>\n\n` +
+    `Kalau ini akun kamu, set <code>OWNER_ID=${userId}</code> di .env lalu restart bot.`,
+    { parse_mode: 'HTML' }
+  );
+  return false;
+}
+
+bot.onText(/^\/emoji(?:@\w+)?(?:\s+([\s\S]*))?$/, async (msg, match) => {
   const chatId = msg.chat.id;
   const userId = msg.from.id;
-  console.log(`[/emoji] from user ${userId} (owner=${OWNER_ID}) in chat ${chatId}`);
+  const arg    = ((match && match[1]) || '').trim();
+  console.log(`[/emoji] user ${userId} (owner=${OWNER_ID}) arg="${arg.slice(0, 40)}"`);
 
+  if (!ownerGuard(msg)) return;
+
+  // ── reset ──
+  if (/^(reset|clear|hapus)$/i.test(arg)) {
+    try { if (fs.existsSync(EMOJI_LOCAL_FILE)) fs.unlinkSync(EMOJI_LOCAL_FILE); } catch {}
+    const { total } = reloadEmoji();
+    return bot.sendMessage(chatId,
+      `♻️ <b>Custom emoji direset.</b>\nSemua ${total} slot kembali ke emoji unicode biasa.`,
+      { parse_mode: 'HTML' });
+  }
+
+  // ── ambil custom emoji dari pesan / reply ──
   const found = extractCustomEmoji(msg);
 
   if (found.length === 0) {
+    const urut = EMOJI_META.map(m => m.fallback).join('');
     return bot.sendMessage(chatId,
-      `⚠️ <b>Tidak ada custom emoji ditemukan.</b>\n\n` +
-      `<b>Cara pakai:</b>\n` +
-      `1. Forward pesan ber-custom-emoji ke chat ini\n` +
-      `2. Reply pesan yang ke-forward → ketik <code>/emoji</code>\n\n` +
-      `Atau, kalau kamu Telegram Premium: ketik <code>/emoji</code> lalu emoji premium-nya di baris berikutnya.\n\n` +
-      `<i>User ID kamu: <code>${userId}</code></i>`,
-      { parse_mode: 'HTML' }
-    );
+      `⚠️ <b>Tidak ada custom emoji premium terdeteksi.</b>\n\n` +
+      `<b>Cara pakai</b> (wajib punya Telegram Premium):\n` +
+      `1. Ketik <code>/emoji</code> lalu tempel emoji <b>premium</b> di belakangnya, urut sesuai slot:\n` +
+      `   <code>/emoji ${urut}</code>\n` +
+      `2. Atau forward pesan ber-emoji-premium ke sini → reply <code>/emoji</code>\n\n` +
+      `Urutan slot (${EMOJI_META.length}): ${EMOJI_META.map((m, i) => `${i + 1}.${m.key}`).join('  ')}\n\n` +
+      `<i>Catatan: emoji unicode biasa (bukan premium) tidak punya ID, jadi tidak terdeteksi.</i>\n` +
+      `<code>/emoji reset</code> untuk balik ke emoji biasa.`,
+      { parse_mode: 'HTML' });
   }
 
-  const lines = found.map((e, i) =>
-    `${i + 1}. <code>${escHTML(e.fallback)}</code>  →  <code>${e.id}</code>`
-  ).join('\n');
+  // ── assign URUT ke slot, simpan, reload live ──
+  const local   = readJsonSafe(EMOJI_LOCAL_FILE) || {};
+  const nAssign = Math.min(found.length, EMOJI_META.length);
+  const rows    = [];
+  for (let i = 0; i < nAssign; i++) {
+    const { key, fallback } = EMOJI_META[i];
+    local[key] = found[i].id;
+    rows.push(`${i + 1}. <b>${key}</b> ${fallback} → <code>${found[i].id}</code>`);
+  }
+
+  try {
+    fs.writeFileSync(EMOJI_LOCAL_FILE, JSON.stringify(local, null, 2));
+  } catch (e) {
+    return bot.sendMessage(chatId, `❌ Gagal menyimpan emoji.local.json: ${escHTML(e.message)}`, { parse_mode: 'HTML' });
+  }
+
+  const { withId, total } = reloadEmoji();
+
+  let extra = '';
+  if (found.length > EMOJI_META.length) extra += `\n⚠️ ${found.length - EMOJI_META.length} emoji ekstra diabaikan (slot cuma ${EMOJI_META.length}).`;
+  if (nAssign < EMOJI_META.length)      extra += `\nℹ️ ${EMOJI_META.length - nAssign} slot belum diisi (masih unicode).`;
 
   await bot.sendMessage(chatId,
-    `✅ <b>Ditemukan ${found.length} custom emoji:</b>\n\n${lines}\n\n` +
-    `<b>Pasang ke <code>emoji.json</code>:</b>\n` +
-    `<pre>${escHTML(JSON.stringify(
-      found.reduce((a, e, i) => (a[`emoji_${i+1}`] = { id: e.id, fallback: e.fallback }, a), {}),
-      null, 2
-    ))}</pre>\n\n` +
-    `Lalu: <code>pm2 restart 2fa-bot</code>`,
-    { parse_mode: 'HTML' }
-  );
+    `✅ <b>${nAssign} custom emoji terpasang & langsung aktif!</b>\n\n` +
+    rows.join('\n') +
+    `\n\nAktif sekarang: <b>${withId}/${total}</b> slot.${extra}\n\n` +
+    `Ketik /start untuk lihat hasilnya. ${E.wave || ''}`,
+    { parse_mode: 'HTML' });
+});
+
+// ─────────────────────────────────────────
+//   /reload — OWNER only: muat ulang emoji.json + emoji.local.json (tanpa restart)
+// ─────────────────────────────────────────
+bot.onText(/^\/reload(?:@\w+)?\b/, async (msg) => {
+  if (!ownerGuard(msg)) return;
+  console.log(`[/reload] user ${msg.from.id}`);
+  const { withId, total } = reloadEmoji();
+  await bot.sendMessage(msg.chat.id,
+    `♻️ <b>Reload selesai.</b>\nCustom emoji aktif: <b>${withId}/${total}</b> slot.`,
+    { parse_mode: 'HTML' });
 });
 
 // ─────────────────────────────────────────
