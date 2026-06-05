@@ -417,31 +417,63 @@ bot.onText(/^\/emoji(?:@\w+)?(?:\s+([\s\S]*))?$/, async (msg, match) => {
       { parse_mode: 'HTML' });
   }
 
-  // ── ambil custom emoji dari pesan / reply ──
-  const found = extractCustomEmoji(msg);
+  // ── ambil custom emoji dari pesan / reply (emoji premium yang dipaste) ──
+  let found     = extractCustomEmoji(msg);
+  let targetKey = null; // kalau set 1 slot spesifik by key
+
+  const KEYS = EMOJI_META.map(m => m.key);
+
+  // ── Fallback A: set 1 slot spesifik → /emoji <key> <id> ──
+  //   contoh: /emoji star 5368324170671202286
+  if (found.length === 0 && arg) {
+    const m2 = arg.match(/^([a-zA-Z_]+)\s+(\d{6,})$/);
+    if (m2 && KEYS.includes(m2[1].toLowerCase())) {
+      targetKey = m2[1].toLowerCase();
+      found = [{ id: m2[2] }];
+    }
+  }
+
+  // ── Fallback B: terima custom_emoji_id MENTAH (angka), urut sesuai slot ──
+  //   contoh: /emoji 5368324170671202286 5379748062124047633
+  if (found.length === 0 && arg) {
+    const ids = arg.match(/\d{6,}/g); // ID custom emoji = angka panjang (17-19 digit)
+    if (ids && ids.length) found = ids.map(id => ({ id }));
+  }
 
   if (found.length === 0) {
     const urut = EMOJI_META.map(m => m.fallback).join('');
     return bot.sendMessage(chatId,
-      `⚠️ <b>Tidak ada custom emoji premium terdeteksi.</b>\n\n` +
-      `<b>Cara pakai</b> (wajib punya Telegram Premium):\n` +
-      `1. Ketik <code>/emoji</code> lalu tempel emoji <b>premium</b> di belakangnya, urut sesuai slot:\n` +
+      `⚠️ <b>Tidak ada custom emoji / ID terdeteksi.</b>\n\n` +
+      `<b>3 cara pakai:</b>\n` +
+      `1. <b>Tempel emoji premium</b> (butuh Telegram Premium), urut sesuai slot:\n` +
       `   <code>/emoji ${urut}</code>\n` +
-      `2. Atau forward pesan ber-emoji-premium ke sini → reply <code>/emoji</code>\n\n` +
-      `Urutan slot (${EMOJI_META.length}): ${EMOJI_META.map((m, i) => `${i + 1}.${m.key}`).join('  ')}\n\n` +
-      `<i>Catatan: emoji unicode biasa (bukan premium) tidak punya ID, jadi tidak terdeteksi.</i>\n` +
+      `2. <b>Pakai ID mentah</b> (tanpa Premium pun bisa), urut sesuai slot:\n` +
+      `   <code>/emoji 5368324170671202286 5379748062124047633</code>\n` +
+      `3. <b>Set 1 slot</b> by nama: <code>/emoji &lt;slot&gt; &lt;id&gt;</code>\n` +
+      `   contoh: <code>/emoji star 5368324170671202286</code>\n\n` +
+      `Slot tersedia (${EMOJI_META.length}): ${EMOJI_META.map((m, i) => `${i + 1}.${m.key}`).join('  ')}\n\n` +
+      `<i>ID custom emoji bisa didapat dengan forward emoji premium ke @userinfobot, atau reply emoji-nya dengan /emoji.</i>\n` +
       `<code>/emoji reset</code> untuk balik ke emoji biasa.`,
       { parse_mode: 'HTML' });
   }
 
-  // ── assign URUT ke slot, simpan, reload live ──
-  const local   = readJsonSafe(EMOJI_LOCAL_FILE) || {};
-  const nAssign = Math.min(found.length, EMOJI_META.length);
-  const rows    = [];
-  for (let i = 0; i < nAssign; i++) {
-    const { key, fallback } = EMOJI_META[i];
-    local[key] = found[i].id;
-    rows.push(`${i + 1}. <b>${key}</b> ${fallback} → <code>${found[i].id}</code>`);
+  // ── assign ke slot, simpan, reload live ──
+  const local = readJsonSafe(EMOJI_LOCAL_FILE) || {};
+  const rows  = [];
+  let nAssign;
+
+  if (targetKey) {
+    const meta = EMOJI_META.find(s => s.key === targetKey);
+    local[targetKey] = found[0].id;
+    rows.push(`<b>${targetKey}</b> ${meta.fallback} → <code>${found[0].id}</code>`);
+    nAssign = 1;
+  } else {
+    nAssign = Math.min(found.length, EMOJI_META.length);
+    for (let i = 0; i < nAssign; i++) {
+      const { key, fallback } = EMOJI_META[i];
+      local[key] = found[i].id;
+      rows.push(`${i + 1}. <b>${key}</b> ${fallback} → <code>${found[i].id}</code>`);
+    }
   }
 
   try {
@@ -453,8 +485,8 @@ bot.onText(/^\/emoji(?:@\w+)?(?:\s+([\s\S]*))?$/, async (msg, match) => {
   const { withId, total } = reloadEmoji();
 
   let extra = '';
-  if (found.length > EMOJI_META.length) extra += `\n⚠️ ${found.length - EMOJI_META.length} emoji ekstra diabaikan (slot cuma ${EMOJI_META.length}).`;
-  if (nAssign < EMOJI_META.length)      extra += `\nℹ️ ${EMOJI_META.length - nAssign} slot belum diisi (masih unicode).`;
+  if (!targetKey && found.length > EMOJI_META.length) extra += `\n⚠️ ${found.length - EMOJI_META.length} emoji ekstra diabaikan (slot cuma ${EMOJI_META.length}).`;
+  if (!targetKey && nAssign < EMOJI_META.length)      extra += `\nℹ️ ${EMOJI_META.length - nAssign} slot belum diisi (masih unicode).`;
 
   await bot.sendMessage(chatId,
     `✅ <b>${nAssign} custom emoji terpasang & langsung aktif!</b>\n\n` +
