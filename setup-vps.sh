@@ -16,7 +16,24 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
-echo "▶ 1/5  Install Redis ..."
+# Lokasi file .env bot (override: ENV_FILE=/path/.env sudo -E bash setup-vps.sh)
+ENV_FILE="${ENV_FILE:-/root/Bot-2fa/.env}"
+
+# set_env KEY VALUE FILE — set/replace baris KEY=VALUE (idempotent, termasuk
+# kalau baris-nya ada tapi kosong atau di-comment).
+set_env() {
+  local key="$1" val="$2" file="$3"
+  [[ -f "$file" ]] || return 1
+  # pastikan file diakhiri newline supaya append tidak nyambung
+  [[ -s "$file" && -z "$(tail -c1 "$file")" ]] || printf '\n' >> "$file"
+  if grep -qE "^[#[:space:]]*${key}=" "$file"; then
+    sed -i -E "s|^[#[:space:]]*${key}=.*|${key}=${val}|" "$file"
+  else
+    printf '%s=%s\n' "$key" "$val" >> "$file"
+  fi
+}
+
+echo "▶ 1/6  Install Redis ..."
 apt update -y
 apt install -y redis-server
 systemctl enable --now redis-server
@@ -27,14 +44,14 @@ else
   exit 1
 fi
 
-echo "▶ 2/5  Install Docker ..."
+echo "▶ 2/6  Install Docker ..."
 if ! command -v docker >/dev/null 2>&1; then
   curl -fsSL https://get.docker.com | bash
 fi
 systemctl enable --now docker
 docker --version
 
-echo "▶ 3/5  Jalankan Local Bot API container ..."
+echo "▶ 3/6  Jalankan Local Bot API container ..."
 mkdir -p /root/bot-api-data /root/bot-api-temp
 
 # Hapus container lama (kalau ada) supaya idempotent
@@ -59,11 +76,22 @@ else
   exit 1
 fi
 
-echo "▶ 4/5  Migrasi bot ke Local Bot API (logout dari cloud) ..."
+echo "▶ 4/6  Konfigurasi .env (BOT_API_ROOT + REDIS_URL) ..."
+if [[ -f "$ENV_FILE" ]]; then
+  set_env REDIS_URL    "redis://127.0.0.1:6379" "$ENV_FILE"
+  set_env BOT_API_ROOT "http://localhost:8081"  "$ENV_FILE"
+  echo "  ✓ .env diperbarui: $ENV_FILE"
+  grep -E '^(REDIS_URL|BOT_API_ROOT)=' "$ENV_FILE" | sed 's/^/     /'
+else
+  echo "  ⚠ $ENV_FILE tidak ada. Tambahkan manual:"
+  echo "     REDIS_URL=redis://127.0.0.1:6379"
+  echo "     BOT_API_ROOT=http://localhost:8081"
+fi
+
+echo "▶ 5/6  Migrasi bot ke Local Bot API (logout dari cloud) ..."
 # Saat pindah dari api.telegram.org ke server lokal, bot WAJIB logout dari
 # cloud dulu, kalau tidak update bisa nyangkut / bot terasa delay/diem.
 # Token diambil dari env BOT_TOKEN atau dari file .env bot.
-ENV_FILE="${ENV_FILE:-/root/Bot-2fa/.env}"
 if [[ -z "${BOT_TOKEN:-}" && -f "$ENV_FILE" ]]; then
   BOT_TOKEN="$(grep -E '^BOT_TOKEN=' "$ENV_FILE" | head -n1 | sed -E 's/^BOT_TOKEN=//; s/["'\'' ]//g; s/\r//g')"
 fi
@@ -94,17 +122,19 @@ fi
 echo "  ℹ Catatan: setelah logout dari cloud, kamu tidak bisa balik ke"
 echo "    api.telegram.org selama ~10 menit (batasan Telegram)."
 
-echo "▶ 5/5  Selesai. Pastikan .env bot kamu berisi:"
+echo "▶ 6/6  Selesai. .env sudah di-set otomatis:"
 cat <<EOF
 
   REDIS_URL=redis://127.0.0.1:6379
   BOT_API_ROOT=http://localhost:8081
 
-Lalu restart bot:
+Tinggal restart bot:
   cd ~/Bot-2fa && npm install && pm2 restart 2fa-bot
   pm2 logs 2fa-bot --lines 20
 
 Sukses kalau log menampilkan:
   Bot API       : http://localhost:8081
   Redis         : connected → redis://127.0.0.1:6379
+
+Verifikasi cepat: ketik /ping di bot (harus < 60 ms) atau: bash check-speed.sh
 EOF
