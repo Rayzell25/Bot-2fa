@@ -72,6 +72,9 @@ if (WEBHOOK_URL) {
       },
     },
   });
+  // Pastikan tidak ada webhook nyangkut yang bikin getUpdates 409 Conflict
+  // (gejala: bot lelet / tidak merespon klik). Aman dipanggil walau tak ada webhook.
+  bot.deleteWebHook().catch(() => {});
 }
 
 // ─────────────────────────────────────────
