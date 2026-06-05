@@ -343,12 +343,11 @@ reloadEmoji();
 // ─────────────────────────────────────────
 
 const mainMenu = {
-  inline_keyboard: [[
-    { text: 'Generate 2FA',    callback_data: 'menu_2fa'     },
-    { text: 'Random Address',  callback_data: 'menu_address' },
-  ],[
-    { text: 'Cek IP / ISP',    callback_data: 'menu_ip'      },
-  ]],
+  inline_keyboard: [
+    [{ text: 'Generate 2FA',    callback_data: 'menu_2fa'     }],
+    [{ text: 'Random Address',  callback_data: 'menu_address' }],
+    [{ text: 'Cek IP / ISP',    callback_data: 'menu_ip'      }],
+  ],
 };
 
 // ─────────────────────────────────────────
