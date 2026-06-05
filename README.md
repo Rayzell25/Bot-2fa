@@ -315,6 +315,7 @@ Dapat ID-nya: forward emoji premium ke [@userinfobot](https://t.me/userinfobot) 
 | `/emoji 🔐📍🌐...` | Pasang custom emoji ke slot secara urut, dari emoji premium (OWNER) |
 | `/emoji <id> <id> ...` | Pasang custom emoji dari **ID angka**, urut sesuai slot (OWNER) |
 | `/emoji <slot> <id>` | Set **1 slot** spesifik by nama, mis. `/emoji star 5368...` (OWNER) |
+| `/emoji test` | Kirim pesan berisi semua custom emoji + diagnosa kalau ditolak Telegram (OWNER) |
 | `/emoji reset` | Hapus semua custom emoji, balik ke unicode (OWNER) |
 | `/reload` | Muat ulang `emoji.json` + `emoji.local.json` tanpa restart (OWNER) |
 | `/ping` | Diagnosa latency API — cek apakah Local Bot API aktif & seberapa cepat (OWNER) |

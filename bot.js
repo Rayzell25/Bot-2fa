@@ -428,6 +428,43 @@ bot.onText(/^\/emoji(?:@\w+)?(?:\s+([\s\S]*))?$/, async (msg, match) => {
       { parse_mode: 'HTML' });
   }
 
+  // ── test/status ── kirim pesan berisi SEMUA custom emoji + diagnosa error
+  if (/^(test|status|cek|check)$/i.test(arg)) {
+    const local   = readJsonSafe(EMOJI_LOCAL_FILE) || {};
+    const withId   = EMOJI_META.filter(m => (local[m.key] || '').toString().trim());
+    const lines = EMOJI_META.map(m => {
+      const id = (local[m.key] || '').toString().trim();
+      return `${E[m.key] || m.fallback}  <b>${m.key}</b> ${id ? `→ <code>${id}</code>` : '<i>(unicode)</i>'}`;
+    });
+
+    // Pesan uji: render semua emoji yang punya custom_emoji_id.
+    const sample = withId.length
+      ? withId.map(m => E[m.key]).join(' ')
+      : '(belum ada custom emoji terpasang)';
+
+    try {
+      await bot.sendMessage(chatId,
+        `🧪 <b>Tes Custom Emoji</b>\n\n` +
+        `Terpasang: <b>${withId.length}/${EMOJI_META.length}</b> slot\n\n` +
+        `Preview: ${sample}\n\n` +
+        lines.join('\n') +
+        `\n\n<i>Kalau di atas tampil sebagai emoji biasa (bukan animasi premium), ` +
+        `kemungkinan: (1) kamu bukan Telegram Premium, atau (2) ID tidak valid. ` +
+        `Animasi hanya terlihat oleh viewer Premium.</i>`,
+        { parse_mode: 'HTML' });
+    } catch (e) {
+      await bot.sendMessage(chatId,
+        `❌ <b>Telegram menolak pesan custom emoji.</b>\n\n` +
+        `Error: <code>${escHTML(e.message || String(e))}</code>\n\n` +
+        `Penyebab umum:\n` +
+        `• ID custom emoji tidak valid / bukan dari sticker set custom emoji\n` +
+        `• Server Local Bot API versi lama (perlu ≥ 9.4) — update image telegram-bot-api\n` +
+        `Pakai <code>/emoji reset</code> lalu pasang ulang ID yang benar.`,
+        { parse_mode: 'HTML' });
+    }
+    return;
+  }
+
   // ── ambil custom emoji dari pesan / reply (emoji premium yang dipaste) ──
   let found     = extractCustomEmoji(msg);
   let targetKey = null; // kalau set 1 slot spesifik by key
