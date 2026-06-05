@@ -279,6 +279,8 @@ Bot ini support **animated custom emoji** lewat tag `<tg-emoji emoji-id>`. Ada 2
 1. **Hanya user Telegram Premium** yang melihat animasi. User biasa tetap lihat emoji unicode normal — itu memang batasan Telegram, bukan bug.
 2. Emoji premium harus dikirim oleh akun yang **punya Telegram Premium** (cuma akun Premium yang bisa mengetik custom emoji).
 
+> ⚠️ **Custom emoji hanya bisa di TEKS pesan, BUKAN di tombol.** Di **Bot API**, `InlineKeyboardButton` tidak punya field `icon_custom_emoji_id` — field itu hanya untuk *forum topic*. Tombol dengan custom emoji (mis. `{ text, icon_custom_emoji_id, callback_data }`) hanya ada di **TDLib/MTProto** (akun user), tidak bisa dikirim oleh bot. Jadi custom emoji bot ini tampil di header/teks menu via `<tg-emoji>`, bukan di label tombol.
+
 ### Cara pasang — otomatis ✨
 
 > Wajib: kamu (OWNER) pakai **Telegram Premium**.
@@ -295,11 +297,24 @@ Bot ini support **animated custom emoji** lewat tag `<tg-emoji emoji-id>`. Ada 2
 
 Boleh kirim sebagian saja (mis. `/emoji 🔐📍` → cuma isi 2 slot pertama), atau forward pesan ber-emoji-premium ke bot lalu **reply** `/emoji`.
 
+### Cara pasang — pakai ID mentah (tanpa Premium) 🔢
+
+Kalau kamu sudah punya `custom_emoji_id` (angka), tidak perlu mengetik emoji premium:
+
+```
+/emoji 5368324170671202286 5379748062124047633        # urut sesuai slot
+/emoji star 5368324170671202286                        # set 1 slot spesifik by nama
+```
+
+Dapat ID-nya: forward emoji premium ke [@userinfobot](https://t.me/userinfobot) / [@JsonDumpBot](https://t.me/JsonDumpBot), atau reply emoji premium dengan `/emoji`.
+
 ### Command terkait
 
 | Command | Fungsi |
 |---------|--------|
-| `/emoji 🔐📍🌐...` | Pasang custom emoji ke slot secara urut (OWNER) |
+| `/emoji 🔐📍🌐...` | Pasang custom emoji ke slot secara urut, dari emoji premium (OWNER) |
+| `/emoji <id> <id> ...` | Pasang custom emoji dari **ID angka**, urut sesuai slot (OWNER) |
+| `/emoji <slot> <id>` | Set **1 slot** spesifik by nama, mis. `/emoji star 5368...` (OWNER) |
 | `/emoji reset` | Hapus semua custom emoji, balik ke unicode (OWNER) |
 | `/reload` | Muat ulang `emoji.json` + `emoji.local.json` tanpa restart (OWNER) |
 | `/whoami` | Cek user ID kamu vs `OWNER_ID` di `.env` |
