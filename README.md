@@ -317,6 +317,7 @@ Dapat ID-nya: forward emoji premium ke [@userinfobot](https://t.me/userinfobot) 
 | `/emoji <slot> <id>` | Set **1 slot** spesifik by nama, mis. `/emoji star 5368...` (OWNER) |
 | `/emoji reset` | Hapus semua custom emoji, balik ke unicode (OWNER) |
 | `/reload` | Muat ulang `emoji.json` + `emoji.local.json` tanpa restart (OWNER) |
+| `/ping` | Diagnosa latency API — cek apakah Local Bot API aktif & seberapa cepat (OWNER) |
 | `/whoami` | Cek user ID kamu vs `OWNER_ID` di `.env` |
 
 > `emoji.local.json` ditulis otomatis oleh bot saat runtime dan sudah masuk `.gitignore`, jadi tidak bentrok saat `git pull`.
