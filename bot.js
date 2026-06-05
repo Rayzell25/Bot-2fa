@@ -524,6 +524,38 @@ bot.onText(/^\/whoami(?:@\w+)?\b/, async (msg) => {
 });
 
 // ─────────────────────────────────────────
+//   /ping — OWNER only: diagnosa latency API (cek Local Bot API aktif?)
+// ─────────────────────────────────────────
+bot.onText(/^\/ping(?:@\w+)?\b/, async (msg) => {
+  if (!ownerGuard(msg)) return;
+
+  const t0 = Date.now();
+  let apiStatus = 'ok';
+  try { await bot.getMe(); } catch (e) { apiStatus = 'error: ' + (e.message || e); }
+  const ms = Date.now() - t0;
+
+  const usingLocal = !!BOT_API_ROOT;
+  let verdict;
+  if (apiStatus !== 'ok')      verdict = `⚠️ ${apiStatus}`;
+  else if (ms < 60)            verdict = '⚡ sangat cepat — Local Bot API aktif';
+  else if (ms < 200)           verdict = '🟢 cepat';
+  else if (ms < 500)           verdict = '🟡 sedang';
+  else                         verdict = '🐌 lambat — kemungkinan MASIH lewat api.telegram.org (Local API belum aktif)';
+
+  await bot.sendMessage(msg.chat.id,
+    `🏓 <b>Ping / Diagnosa</b>\n\n` +
+    `⊹ Bot API : <code>${BOT_API_ROOT || 'https://api.telegram.org (resmi)'}</code>\n` +
+    `⊹ Local   : <code>${usingLocal ? 'YA (localhost)' : 'TIDAK'}</code>\n` +
+    `⊹ Mode    : <code>${WEBHOOK_URL ? 'webhook' : 'polling'}</code>\n` +
+    `⊹ Redis   : <code>${redis ? 'aktif' : 'mati (in-memory)'}</code>\n` +
+    `⊹ getMe   : <code>${ms} ms</code>\n\n` +
+    `${verdict}` +
+    (!usingLocal ? `\n\n<i>Set <code>BOT_API_ROOT=http://localhost:8081</code> di .env lalu restart untuk respon instan.</i>` : ''),
+    { parse_mode: 'HTML' }
+  );
+});
+
+// ─────────────────────────────────────────
 //   /start
 // ─────────────────────────────────────────
 
@@ -624,7 +656,7 @@ bot.on('callback_query', async (query) => {
 
   // ── menu_2fa ──
   if (data === 'menu_2fa') {
-    await bot.answerCallbackQuery(query.id);
+    bot.answerCallbackQuery(query.id).catch(() => {});
     await setMsg(userId, msgId);
     stopSession(userId);
     await setState(userId, 'awaiting_2fa');
@@ -637,7 +669,7 @@ bot.on('callback_query', async (query) => {
 
   // ── menu_address ──
   if (data === 'menu_address') {
-    await bot.answerCallbackQuery(query.id);
+    bot.answerCallbackQuery(query.id).catch(() => {});
     await setMsg(userId, msgId);
     await sendOrEdit(chatId, userId,
       `${E.pin} <b>Random Address</b>\n\nPilih jumlah alamat.`,
@@ -668,7 +700,7 @@ bot.on('callback_query', async (query) => {
   if (data.startsWith('addr_')) {
     const n    = parseInt(data.replace('addr_', ''));
     const last = data; // simpan untuk tombol Generate Baru
-    await bot.answerCallbackQuery(query.id);
+    bot.answerCallbackQuery(query.id).catch(() => {});
     await setMsg(userId, msgId);
 
     const addrs = generateAddresses(n);
@@ -685,7 +717,7 @@ bot.on('callback_query', async (query) => {
 
   // ── back_main ──
   if (data === 'back_main') {
-    await bot.answerCallbackQuery(query.id);
+    bot.answerCallbackQuery(query.id).catch(() => {});
     await setMsg(userId, msgId);
     stopSession(userId);
     await clearState(userId);
@@ -698,7 +730,7 @@ bot.on('callback_query', async (query) => {
 
   // ── otp_back ──
   if (data === 'otp_back') {
-    await bot.answerCallbackQuery(query.id);
+    bot.answerCallbackQuery(query.id).catch(() => {});
     stopSession(userId);
     await setMsg(userId, msgId);
     await sendOrEdit(chatId, userId,
@@ -721,7 +753,7 @@ bot.on('callback_query', async (query) => {
       });
     }
 
-    await bot.answerCallbackQuery(query.id, { text: 'Refreshed!' });
+    bot.answerCallbackQuery(query.id, { text: 'Refreshed!' }).catch(() => {});
     await setMsg(userId, msgId);
     await startOtpSession(userId, chatId, base32);
     return;
@@ -729,7 +761,7 @@ bot.on('callback_query', async (query) => {
 
   // ── menu_ip ──
   if (data === 'menu_ip') {
-    await bot.answerCallbackQuery(query.id);
+    bot.answerCallbackQuery(query.id).catch(() => {});
     await setMsg(userId, msgId);
     await sendOrEdit(chatId, userId,
       `${E.globe} <b>Cek IP / ISP</b>\n\nKirim IP atau domain.\n\n⊹ <code>178.128.98.106</code>\n⊹ <code>google.com</code>`,
