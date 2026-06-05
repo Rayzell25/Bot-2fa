@@ -200,6 +200,8 @@ Dua hal ini bikin bot **jauh lebih responsif** terutama di VPS jauh:
 | **Redis** | Cache session/state user → bot tetap "ingat" state walau di-restart |
 | **Local Bot API** | Menghilangkan latency request ke `api.telegram.org` (jadi `localhost`) |
 
+> 🧠 **Soal MTProto:** Local Bot API (`aiogram/telegram-bot-api`) **adalah** lapisan MTProto-nya — dia yang connect ke DC Telegram (`149.154.167.50:443`) via MTProto dari VPS kamu. Bot Node cuma ngobrol ke `localhost:8081` (HTTP, ~0ms). Inilah cara tercepat untuk sebuah **bot**. Catatan: bot Telegram **tidak bisa** pakai MTProto *client-to-client* (peer-to-peer) — itu khusus akun user (userbot), bukan akun bot.
+
 ### A. Install Redis
 ```bash
 apt install redis-server -y && systemctl start redis && systemctl enable redis
@@ -233,6 +235,18 @@ Cek status:
 docker ps                     # container harus "Up"
 docker logs telegram-bot-api  # tidak boleh ada error
 ```
+
+### C2. ⚠️ WAJIB: Logout dari cloud sebelum pakai Local API
+Saat pindah dari `api.telegram.org` ke server lokal, bot **harus logout dari cloud dulu**. Kalau dilewati, update bisa nyangkut dan bot terasa **delay / diem**.
+
+```bash
+# ganti <TOKEN> dengan BOT_TOKEN kamu
+curl -s "https://api.telegram.org/bot<TOKEN>/logOut"
+
+# verifikasi local server sudah melayani bot (harus balas "ok":true)
+curl -s "http://localhost:8081/bot<TOKEN>/getMe"
+```
+> Setelah logout, kamu **tidak bisa balik** ke `api.telegram.org` selama ~10 menit (batasan Telegram). Script `setup-vps.sh` melakukan langkah ini otomatis (step 4/5) kalau `BOT_TOKEN` ada di `.env`.
 
 ### D. Tambahkan ke `.env` bot kamu
 ```env
