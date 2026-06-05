@@ -18,7 +18,6 @@
 
 | Fitur | Keterangan |
 |-------|-----------|
-| 🔒 **Force Join Channel** | User wajib join sebelum bisa pakai bot |
 | 🔐 **Generate 2FA** | OTP real-time dengan countdown & tombol Refresh |
 | 📍 **Generate Alamat** | Alamat Indonesia random (10 kota real), pilih 1–10 |
 | ✏️ **1 Pesan Saja** | Semua menu di-edit dalam 1 chat, tidak buat pesan baru |
@@ -160,18 +159,11 @@ CHANNEL=@NamaChannel
 | `BOT_TOKEN` | Chat [@BotFather](https://t.me/BotFather) → `/newbot` |
 | `OWNER_ID` | Chat [@userinfobot](https://t.me/userinfobot) |
 | `BOT_USERNAME` | Username bot dari BotFather (tanpa `@`) |
-| `CHANNEL` | Username channel kamu (format: `@namachannel`) |
+| `CHANNEL` | Opsional — hanya tampil di log startup (format: `@namachannel`) |
 
 Simpan: **CTRL+X → Y → Enter**
 
-### STEP 7 — Jadikan Bot sebagai Admin Channel
-> ⚠️ **Wajib!** Bot harus jadi admin agar force-join berfungsi.
-
-1. Buka channel Telegram kamu
-2. **Edit → Administrators → Add Administrator**
-3. Cari username bot → aktifkan ✅ **Add Members** → Simpan
-
-### STEP 8 — Test Jalankan
+### STEP 7 — Test Jalankan
 ```bash
 node bot.js
 ```
@@ -182,9 +174,9 @@ node bot.js
   Owner   : 123456789
   Channel : @RayzellStores
 ```
-Tekan **CTRL+C**, lanjut ke STEP 9.
+Tekan **CTRL+C**, lanjut ke STEP 8.
 
-### STEP 9 — Jalankan dengan PM2 (Permanent)
+### STEP 8 — Jalankan dengan PM2 (Permanent)
 ```bash
 pm2 start bot.js --name "2fa-bot"
 pm2 startup
@@ -192,7 +184,7 @@ pm2 startup
 pm2 save
 ```
 
-### STEP 10 — Verifikasi
+### STEP 9 — Verifikasi
 1. Buka Telegram → cari username bot
 2. Ketik `/start`
 3. Muncul menu utama → **✅ Bot berhasil!**
