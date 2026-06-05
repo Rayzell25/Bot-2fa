@@ -184,14 +184,14 @@ function generateAddresses(n) {
 
 function formatAddress(addr, i) {
   return (
-    `⎔ <b>#${i}</b>\n` +
-    `⊹ Street   : <code>${addr.street}</code>\n` +
-    `⊹ City     : <code>${addr.city}</code>\n` +
-    `⊹ Province : <code>${addr.province}</code>\n` +
-    `⊹ Phone    : <code>${addr.phone}</code>\n` +
-    `⊹ Postal   : <code>${addr.postal}</code>\n` +
-    `⊹ Country  : <code>${addr.country}</code>\n` +
-    `⊹ Full     : <code>${addr.full}</code>`
+    `<b>#${i}</b>\n` +
+    `Street   : <code>${addr.street}</code>\n` +
+    `City     : <code>${addr.city}</code>\n` +
+    `Province : <code>${addr.province}</code>\n` +
+    `Phone    : <code>${addr.phone}</code>\n` +
+    `Postal   : <code>${addr.postal}</code>\n` +
+    `Country  : <code>${addr.country}</code>\n` +
+    `Full     : <code>${addr.full}</code>`
   );
 }
 
@@ -344,10 +344,10 @@ reloadEmoji();
 
 const mainMenu = {
   inline_keyboard: [[
-    { text: '🔐 Generate 2FA',    callback_data: 'menu_2fa'     },
-    { text: '📍 Random Address',  callback_data: 'menu_address' },
+    { text: 'Generate 2FA',    callback_data: 'menu_2fa'     },
+    { text: 'Random Address',  callback_data: 'menu_address' },
   ],[
-    { text: '🌐 Cek IP / ISP',    callback_data: 'menu_ip'      },
+    { text: 'Cek IP / ISP',    callback_data: 'menu_ip'      },
   ]],
 };
 
@@ -621,7 +621,7 @@ bot.onText(/\/start/, async (msg) => {
   stopSession(userId);
 
   await sendOrEdit(chatId, userId,
-    `${E.wave} Halo, <b>${name}</b>!\n\n${E.star} Pilih fitur di bawah.`,
+    `Halo, <b>${name}</b>\n\nPilih menu di bawah.`,
     { reply_markup: mainMenu }
   );
 });
@@ -635,16 +635,16 @@ async function startOtpSession(userId, chatId, base32) {
 
   let otp;
   try { otp = getOTP(base32); }
-  catch { return sendOrEdit(chatId, userId, `${E.warning} <b>Error:</b> This is not a valid 2FA Secret!`); }
+  catch { return sendOrEdit(chatId, userId, `<b>Error:</b> This is not a valid 2FA Secret!`); }
 
   const startPeriod = currentPeriod();
   const secs        = secondsLeft();
 
   const msgId = await sendOrEdit(chatId, userId,
-    `${E.lock} <b>Kode 2FA</b>\n\n⊹ <code>${otp}</code>`,
+    `<b>Kode 2FA</b>\n\n<code>${otp}</code>`,
     {
       reply_markup: { inline_keyboard: [[
-        { text: `⏱ ${secs}s`,   callback_data: `otp_refresh_${base32}` },
+        { text: `${secs}s`,      callback_data: `otp_refresh_${base32}` },
         { text: '← Back',        callback_data: 'otp_back' },
       ]]},
     }
@@ -660,7 +660,7 @@ async function startOtpSession(userId, chatId, base32) {
         if (sessions[userId]) sessions[userId].timer = null;
 
         await bot.editMessageText(
-          `${E.lock} <b>Kode 2FA</b>\n\n⊹ <code>${otp}</code>\n\n${E.refresh} <i>Expired · Tap Refresh</i>`,
+          `<b>Kode 2FA</b>\n\n<code>${otp}</code>\n\n<i>Expired · Tap Refresh</i>`,
           {
             chat_id      : chatId,
             message_id   : msgId,
@@ -675,13 +675,13 @@ async function startOtpSession(userId, chatId, base32) {
       }
 
       await bot.editMessageText(
-        `${E.lock} <b>Kode 2FA</b>\n\n⊹ <code>${otp}</code>`,
+        `<b>Kode 2FA</b>\n\n<code>${otp}</code>`,
         {
           chat_id      : chatId,
           message_id   : msgId,
           parse_mode   : 'HTML',
           reply_markup : { inline_keyboard: [[
-            { text: `⏱ ${nowSecs}s`, callback_data: `otp_refresh_${base32}` },
+            { text: `${nowSecs}s`,    callback_data: `otp_refresh_${base32}` },
             { text: '← Back',         callback_data: 'otp_back' },
           ]]},
         }
@@ -715,7 +715,7 @@ bot.on('callback_query', async (query) => {
     stopSession(userId);
     setState(userId, 'awaiting_2fa');
     await sendOrEdit(chatId, userId,
-      `${E.lock} <b>Generate 2FA</b>\n\nKirim secret key 2FA kamu.\n\n⊹ Contoh: <code>JBSWY3DPEHPK3PXP</code>`,
+      `<b>Generate 2FA</b>\n\nKirim secret key 2FA kamu.\n\nContoh: <code>JBSWY3DPEHPK3PXP</code>`,
       { reply_markup: { inline_keyboard: [[{ text: '← Back', callback_data: 'back_main' }]] } },
       msgId
     );
@@ -727,7 +727,7 @@ bot.on('callback_query', async (query) => {
     bot.answerCallbackQuery(query.id).catch(() => {});
     setMsg(userId, msgId);
     await sendOrEdit(chatId, userId,
-      `${E.pin} <b>Random Address</b>\n\nPilih jumlah alamat.`,
+      `<b>Random Address</b>\n\nPilih jumlah alamat.`,
       {
         reply_markup: { inline_keyboard: [
           [
@@ -778,7 +778,7 @@ bot.on('callback_query', async (query) => {
     stopSession(userId);
     clearState(userId);
     await sendOrEdit(chatId, userId,
-      `${E.wave} Halo, <b>${name}</b>!\n\n${E.star} Pilih fitur di bawah.`,
+      `Halo, <b>${name}</b>\n\nPilih menu di bawah.`,
       { reply_markup: mainMenu },
       msgId
     );
@@ -791,7 +791,7 @@ bot.on('callback_query', async (query) => {
     stopSession(userId);
     setMsg(userId, msgId);
     await sendOrEdit(chatId, userId,
-      `${E.wave} Halo, <b>${name}</b>!\n\n${E.star} Pilih fitur di bawah.`,
+      `Halo, <b>${name}</b>\n\nPilih menu di bawah.`,
       { reply_markup: mainMenu },
       msgId
     );
@@ -823,7 +823,7 @@ bot.on('callback_query', async (query) => {
     setMsg(userId, msgId);
     setState(userId, 'awaiting_ip');
     await sendOrEdit(chatId, userId,
-      `${E.globe} <b>Cek IP / ISP</b>\n\nKirim IP atau domain.\n\n⊹ <code>178.128.98.106</code>\n⊹ <code>google.com</code>`,
+      `<b>Cek IP / ISP</b>\n\nKirim IP atau domain.\n\n<code>178.128.98.106</code>\n<code>google.com</code>`,
       { reply_markup: { inline_keyboard: [[{ text: '← Back', callback_data: 'back_main' }]] } },
       msgId
     );
@@ -856,7 +856,7 @@ bot.on('message', async (msg) => {
     // Reset state dulu biar tidak nyangkut
 
     await sendOrEdit(chatId, userId,
-      `${E.globe} <b>Mengecek...</b> <code>${query}</code>`,
+      `<b>Mengecek...</b> <code>${query}</code>`,
       { reply_markup: { inline_keyboard: [[{ text: '← Back', callback_data: 'back_main' }]] } }
     );
 
@@ -869,32 +869,28 @@ bot.on('message', async (msg) => {
 
       if (d.status === 'fail') {
         await sendOrEdit(chatId, userId,
-          `${E.warning} Gagal mengecek: <code>${query}</code>\n\n<i>${d.message || 'IP/domain tidak valid.'}</i>`,
+          `Gagal mengecek: <code>${query}</code>\n\n<i>${d.message || 'IP/domain tidak valid.'}</i>`,
           { reply_markup: { inline_keyboard: [[{ text: '← Back', callback_data: 'back_main' }]] } }
         );
         return;
       }
 
-      // Flag emoji dari country code
-      const flag = d.countryCode
-        ? d.countryCode.toUpperCase().replace(/./g, c => String.fromCodePoint(0x1F1E6 - 65 + c.charCodeAt(0)))
-        : '';
-
+      // Flag dihilangkan (tema minimal tanpa emoji)
       const mapsUrl = `https://www.google.com/maps?q=${d.lat},${d.lon}`;
 
       const result =
-        `${E.globe} <b>Hasil IP Lookup</b>\n\n` +
-        `${E.id} IP       : <code>${d.query}</code>\n` +
-        `⊹ ISP      : <code>${d.isp}</code>\n` +
-        `⊹ Org      : <code>${d.org}</code>\n` +
-        `⊹ ASN      : <code>${d.as}</code>\n` +
-        `⊹ Negara   : <code>${d.country} ${flag} (${d.countryCode})</code>\n` +
-        `⊹ Kota     : <code>${d.city}</code>\n` +
-        `⊹ Region   : <code>${d.regionName}</code>\n` +
-        `⊹ Koordinat: <code>${d.lat}, ${d.lon}</code>\n` +
-        `⊹ Timezone : <code>${d.timezone}</code>\n` +
-        `⊹ ZIP      : <code>${d.zip || '-'}</code>\n\n` +
-        `${E.map} <a href="${mapsUrl}">Lihat di Google Maps</a>`;
+        `<b>Hasil IP Lookup</b>\n\n` +
+        `IP        : <code>${d.query}</code>\n` +
+        `ISP       : <code>${d.isp}</code>\n` +
+        `Org       : <code>${d.org}</code>\n` +
+        `ASN       : <code>${d.as}</code>\n` +
+        `Negara    : <code>${d.country} (${d.countryCode})</code>\n` +
+        `Kota      : <code>${d.city}</code>\n` +
+        `Region    : <code>${d.regionName}</code>\n` +
+        `Koordinat : <code>${d.lat}, ${d.lon}</code>\n` +
+        `Timezone  : <code>${d.timezone}</code>\n` +
+        `ZIP       : <code>${d.zip || '-'}</code>\n\n` +
+        `<a href="${mapsUrl}">Lihat di Google Maps</a>`;
 
       await sendOrEdit(chatId, userId, result, {
         reply_markup: { inline_keyboard: [[
@@ -905,7 +901,7 @@ bot.on('message', async (msg) => {
       });
     } catch (err) {
       await sendOrEdit(chatId, userId,
-        `${E.warning} <b>Error:</b> Gagal menghubungi server. Coba lagi.\n\n<i>${err.message}</i>`,
+        `<b>Error:</b> Gagal menghubungi server. Coba lagi.\n\n<i>${err.message}</i>`,
         { reply_markup: { inline_keyboard: [[{ text: '← Back', callback_data: 'back_main' }]] } }
       );
     }
@@ -917,7 +913,7 @@ bot.on('message', async (msg) => {
     const input = text.toUpperCase().replace(/\s+/g, '');
     if (!isValid2FASecret(input)) {
       await sendOrEdit(chatId, userId,
-        `${E.warning} <b>Secret tidak valid.</b>\n\nCoba lagi atau kembali ke menu.`,
+        `<b>Secret tidak valid.</b>\n\nCoba lagi atau kembali ke menu.`,
         { reply_markup: { inline_keyboard: [[{ text: '← Back', callback_data: 'back_main' }]] } }
       );
       return;
