@@ -53,6 +53,10 @@ docker --version
 
 echo "▶ 3/6  Jalankan Local Bot API container ..."
 mkdir -p /root/bot-api-data /root/bot-api-temp
+# PENTING: proses di dalam container menulis ke folder ini. Kalau permission
+# salah → "Can't create files in the directory /tmp/telegram-bot-api" →
+# container crash-loop (Restarting) → port 8081 kosong → ECONNREFUSED di bot.
+chmod 777 /root/bot-api-data /root/bot-api-temp
 
 # Hapus container lama (kalau ada) supaya idempotent
 docker rm -f telegram-bot-api >/dev/null 2>&1 || true
@@ -60,6 +64,7 @@ docker rm -f telegram-bot-api >/dev/null 2>&1 || true
 docker run -d \
   --name telegram-bot-api \
   --restart always \
+  --user 0:0 \
   -p 127.0.0.1:8081:8081 \
   -e TELEGRAM_API_ID="${TELEGRAM_API_ID}" \
   -e TELEGRAM_API_HASH="${TELEGRAM_API_HASH}" \
@@ -68,11 +73,24 @@ docker run -d \
   -v /root/bot-api-temp:/tmp/telegram-bot-api \
   aiogram/telegram-bot-api:latest >/dev/null
 
-sleep 3
-if docker ps --format '{{.Names}}' | grep -q '^telegram-bot-api$'; then
-  echo "  ✓ Container telegram-bot-api jalan di 127.0.0.1:8081"
+# Tunggu & verifikasi BENERAN listen di 8081 (bukan cuma "ada container").
+echo "  • Menunggu container siap ..."
+OK=0
+for i in $(seq 1 15); do
+  sleep 2
+  if curl -s -m 3 "http://127.0.0.1:8081/" >/dev/null 2>&1; then OK=1; break; fi
+  # kalau sudah Restarting/Exited, percuma nunggu — keluar lebih awal
+  ST="$(docker inspect -f '{{.State.Status}}' telegram-bot-api 2>/dev/null || echo missing)"
+  if [[ "$ST" == "restarting" || "$ST" == "exited" ]]; then break; fi
+done
+
+if [[ "$OK" == "1" ]]; then
+  echo "  ✓ Container telegram-bot-api listen di 127.0.0.1:8081"
 else
-  echo "  ✗ Container gagal start. Cek: docker logs telegram-bot-api" >&2
+  echo "  ✗ Container TIDAK listen di 8081. Status: $(docker inspect -f '{{.State.Status}}' telegram-bot-api 2>/dev/null)" >&2
+  echo "  ── 20 baris log terakhir ──" >&2
+  docker logs --tail 20 telegram-bot-api 2>&1 | sed 's/^/    /' >&2
+  echo "  → Perbaiki masalah di atas lalu jalankan ulang script ini." >&2
   exit 1
 fi
 

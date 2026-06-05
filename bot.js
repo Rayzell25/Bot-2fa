@@ -66,21 +66,20 @@ if (WEBHOOK_URL) {
     .catch(err => console.error('  Webhook error:', err.message));
 } else {
   // POLLING mode — fallback jika WEBHOOK_URL tidak diset
-  // Long polling — interval 0 + timeout 60 detik = respon hampir instan
+  // Long polling — interval 0 + timeout 60 detik = respon hampir instan.
+  // autoStart:false → polling baru dimulai setelah initPolling() memastikan
+  // baseApiUrl yang dipakai benar-benar hidup (lihat bagian STARTUP).
   bot = new TelegramBot(BOT_TOKEN, {
     baseApiUrl: BOT_API_ROOT || undefined,
     polling: {
       interval: 0,
-      autoStart: true,
+      autoStart: false,
       params: {
         timeout: 60,
         allowed_updates: ['message', 'callback_query'],
       },
     },
   });
-  // Pastikan tidak ada webhook nyangkut yang bikin getUpdates 409 Conflict
-  // (gejala: bot lelet / tidak merespon klik). Aman dipanggil walau tak ada webhook.
-  bot.deleteWebHook().catch(() => {});
 }
 
 // ─────────────────────────────────────────
@@ -898,3 +897,47 @@ console.log(`  Bot     : @${BOT_USERNAME}`);
 console.log(`  Owner   : ${OWNER_ID}`);
 console.log(`  Channel : ${CHANNEL}`);
 console.log('');
+
+// ─────────────────────────────────────────
+//   INIT POLLING — probe Local Bot API dulu, auto-fallback ke cloud
+// ─────────────────────────────────────────
+// Penyebab umum bot "diam": BOT_API_ROOT diarahkan ke Local Bot API
+// (127.0.0.1:8081) tapi containernya MATI → ECONNREFUSED → polling gagal terus.
+// Di sini kita cek dulu apakah API target hidup; kalau tidak, otomatis pakai
+// server resmi Telegram supaya bot TETAP JALAN (cuma tidak se-instan local).
+async function apiAlive(root) {
+  const base = root || 'https://api.telegram.org';
+  try {
+    const r = await axios.get(`${base}/bot${BOT_TOKEN}/getMe`, { timeout: 5000 });
+    return !!(r.data && r.data.ok);
+  } catch { return false; }
+}
+
+async function initPolling() {
+  if (WEBHOOK_URL) return; // mode webhook diatur di atas
+
+  // 1) Kalau pakai Local API, pastikan hidup. Kalau mati → fallback cloud.
+  if (BOT_API_ROOT) {
+    const ok = await apiAlive(BOT_API_ROOT);
+    if (!ok) {
+      console.error(`  ⚠ Local Bot API (${BOT_API_ROOT}) TIDAK merespon — kemungkinan container mati.`);
+      console.error('    → Fallback ke https://api.telegram.org supaya bot tetap jalan.');
+      console.error('    Hidupkan ulang: docker start telegram-bot-api  (lalu restart bot).');
+      bot.options.baseApiUrl = 'https://api.telegram.org';
+      BOT_API_ROOT = '';
+    } else {
+      console.log(`  ✓ Local Bot API hidup → ${BOT_API_ROOT}`);
+    }
+  }
+
+  // 2) Bersihkan webhook nyangkut (cegah getUpdates 409), lalu mulai polling.
+  try { await bot.deleteWebHook(); } catch {}
+  try {
+    await bot.startPolling();
+    console.log(`  ✓ Polling aktif via ${bot.options.baseApiUrl || 'https://api.telegram.org'}`);
+  } catch (e) {
+    console.error('  ✗ Gagal mulai polling:', e.message);
+  }
+}
+
+initPolling();
