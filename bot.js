@@ -292,7 +292,9 @@ function stopSession(userId) {
 //   emoji.json        : default + fallback unicode (di-commit ke git)
 //   emoji.local.json  : { "key": "<custom_emoji_id>" } override runtime,
 //                       ditulis otomatis oleh command /emoji (di-gitignore).
-//   • id terisi  → render <tg-emoji emoji-id="ID">FALLBACK</tg-emoji> (Premium user lihat animasi)
+//   • id terisi  → render <tg-emoji emoji-id="ID">FALLBACK</tg-emoji>
+//                  (animasi HANYA tampil jika bot punya Fragment username;
+//                   kalau tidak, Telegram abaikan tag & tampilkan fallback)
 //   • id kosong  → pakai fallback unicode polos (semua user lihat sama)
 //   Referensi: https://core.telegram.org/bots/api#messageentity (type: custom_emoji)
 // ─────────────────────────────────────────
@@ -377,7 +379,9 @@ async function sendOrEdit(chatId, userId, text, opts = {}, knownMsgId) {
 
 // ─────────────────────────────────────────
 //   /emoji — OWNER only: pasang custom emoji premium otomatis
-//   Cara pakai (butuh Telegram Premium):
+//   SYARAT WAJIB: bot harus punya username yang dibeli di Fragment, kalau tidak
+//   Telegram mengabaikan tag <tg-emoji> dan menampilkan emoji biasa.
+//   Cara pakai:
 //     • Ketik /emoji lalu tempel emoji-emoji PREMIUM di belakangnya:
 //         /emoji 🔐📍🌐⭐🔥🚀⚠️👋🔄⏱🗺🪪📢
 //       Emoji diisi ke slot SECARA URUT (lihat daftar EMOJI_META).
@@ -448,17 +452,19 @@ bot.onText(/^\/emoji(?:@\w+)?(?:\s+([\s\S]*))?$/, async (msg, match) => {
         `Terpasang: <b>${withId.length}/${EMOJI_META.length}</b> slot\n\n` +
         `Preview: ${sample}\n\n` +
         lines.join('\n') +
-        `\n\n<i>Kalau di atas tampil sebagai emoji biasa (bukan animasi premium), ` +
-        `kemungkinan: (1) kamu bukan Telegram Premium, atau (2) ID tidak valid. ` +
-        `Animasi hanya terlihat oleh viewer Premium.</i>`,
+        `\n\n<i>Kalau di atas tampil sebagai emoji biasa (bukan animasi), penyebab UTAMA: ` +
+        `bot ini belum punya username yang dibeli di Fragment. Telegram hanya mengizinkan ` +
+        `custom emoji dari bot yang punya Fragment username — kalau tidak, tag &lt;tg-emoji&gt; ` +
+        `diabaikan diam-diam (tetap terkirim, tapi jadi emoji biasa). Ini TIDAK bergantung ` +
+        `pada status Premium pengirim maupun penonton.</i>`,
         { parse_mode: 'HTML' });
     } catch (e) {
       await bot.sendMessage(chatId,
         `❌ <b>Telegram menolak pesan custom emoji.</b>\n\n` +
         `Error: <code>${escHTML(e.message || String(e))}</code>\n\n` +
         `Penyebab umum:\n` +
+        `• Bot belum punya Fragment username (syarat WAJIB custom emoji)\n` +
         `• ID custom emoji tidak valid / bukan dari sticker set custom emoji\n` +
-        `• Server Local Bot API versi lama (perlu ≥ 9.4) — update image telegram-bot-api\n` +
         `Pakai <code>/emoji reset</code> lalu pasang ulang ID yang benar.`,
         { parse_mode: 'HTML' });
     }

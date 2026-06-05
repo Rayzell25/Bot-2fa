@@ -272,18 +272,19 @@ pm2 logs 2fa-bot --lines 20
 
 ---
 
-## 🎨 Custom Emoji (Telegram Premium)
+## 🎨 Custom Emoji (butuh Fragment username)
 
-Bot ini support **animated custom emoji** lewat tag `<tg-emoji emoji-id>`. Ada 2 hal penting:
+Bot ini support **animated custom emoji** lewat tag `<tg-emoji emoji-id>`. Fakta penting:
 
-1. **Hanya user Telegram Premium** yang melihat animasi. User biasa tetap lihat emoji unicode normal — itu memang batasan Telegram, bukan bug.
-2. Emoji premium harus dikirim oleh akun yang **punya Telegram Premium** (cuma akun Premium yang bisa mengetik custom emoji).
+1. ⚠️ **SYARAT WAJIB: bot harus punya username yang dibeli di [Fragment](https://fragment.com).** Tanpa itu, Telegram **mengabaikan** tag `<tg-emoji>` dan menampilkan emoji biasa — walaupun ID-nya benar dan kamu Premium. Bot biasa dari BotFather **tidak bisa** kirim custom emoji.
+2. **Penonton TIDAK perlu Premium.** Begitu bot punya Fragment username, custom emoji tampil animasi untuk **semua** orang (Premium maupun bukan). Inilah kenapa bot orang lain bisa kamu lihat premium di akun non-Premium.
+3. Status Premium pengirim/OWNER **tidak relevan** untuk bot — yang menentukan adalah Fragment username pada bot.
 
 > ⚠️ **Custom emoji hanya bisa di TEKS pesan, BUKAN di tombol.** Di **Bot API**, `InlineKeyboardButton` tidak punya field `icon_custom_emoji_id` — field itu hanya untuk *forum topic*. Tombol dengan custom emoji (mis. `{ text, icon_custom_emoji_id, callback_data }`) hanya ada di **TDLib/MTProto** (akun user), tidak bisa dikirim oleh bot. Jadi custom emoji bot ini tampil di header/teks menu via `<tg-emoji>`, bukan di label tombol.
 
 ### Cara pasang — otomatis ✨
 
-> Wajib: kamu (OWNER) pakai **Telegram Premium**.
+> Prasyarat: bot sudah punya **Fragment username**. Mengetik emoji premium butuh akun Telegram Premium (hanya untuk *mengambil* ID-nya); alternatifnya pakai ID angka langsung (lihat bawah).
 
 1. Di chat bot, ketik `/emoji` lalu **tempel emoji-emoji premium** di belakangnya, **urut sesuai slot**:
    ```
