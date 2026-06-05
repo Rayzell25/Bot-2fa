@@ -242,42 +242,42 @@ const MSG_TTL   = 24 * 60 * 60; // 24 jam
 const STATE_TTL = 60 * 60;      // 1 jam
 
 async function getMsg(userId) {
+  // In-memory dulu (instan) — hindari round-trip Redis di jalur panas klik.
+  if (memMsg[userId] !== undefined) return memMsg[userId];
   if (redis) {
     try {
       const v = await redis.get(`msg:${userId}`);
-      return v ? parseInt(v) : undefined;
-    } catch { return memMsg[userId]; }
+      if (v) { memMsg[userId] = parseInt(v); return memMsg[userId]; }
+    } catch {}
   }
-  return memMsg[userId];
+  return undefined;
 }
 
-async function setMsg(userId, msgId) {
+// Non-blocking: tulis Redis di background, jangan tahan respon ke user.
+function setMsg(userId, msgId) {
   memMsg[userId] = msgId;
-  if (redis) {
-    try { await redis.set(`msg:${userId}`, msgId, 'EX', MSG_TTL); } catch {}
-  }
+  if (redis) redis.set(`msg:${userId}`, msgId, 'EX', MSG_TTL).catch(() => {});
 }
 
 async function getState(userId) {
+  if (memState[userId] !== undefined) return memState[userId];
   if (redis) {
-    try { return (await redis.get(`state:${userId}`)) || undefined; }
-    catch { return memState[userId]; }
+    try {
+      const v = await redis.get(`state:${userId}`);
+      if (v) { memState[userId] = v; return v; }
+    } catch {}
   }
-  return memState[userId];
+  return undefined;
 }
 
-async function setState(userId, state) {
+function setState(userId, state) {
   memState[userId] = state;
-  if (redis) {
-    try { await redis.set(`state:${userId}`, state, 'EX', STATE_TTL); } catch {}
-  }
+  if (redis) redis.set(`state:${userId}`, state, 'EX', STATE_TTL).catch(() => {});
 }
 
-async function clearState(userId) {
+function clearState(userId) {
   delete memState[userId];
-  if (redis) {
-    try { await redis.del(`state:${userId}`); } catch {}
-  }
+  if (redis) redis.del(`state:${userId}`).catch(() => {});
 }
 
 function stopSession(userId) {
@@ -353,8 +353,10 @@ const mainMenu = {
 //   SEND / EDIT helper (1 pesan saja)
 // ─────────────────────────────────────────
 
-async function sendOrEdit(chatId, userId, text, opts = {}) {
-  const mid = await getMsg(userId);
+async function sendOrEdit(chatId, userId, text, opts = {}, knownMsgId) {
+  // knownMsgId: kalau dipanggil dari callback, message_id sudah diketahui →
+  // langsung edit tanpa lookup (hemat round-trip & 1 await di jalur panas).
+  const mid = knownMsgId || await getMsg(userId);
   if (mid) {
     try {
       await bot.editMessageText(text, {
@@ -363,12 +365,13 @@ async function sendOrEdit(chatId, userId, text, opts = {}) {
         parse_mode: 'HTML',
         ...opts,
       });
+      memMsg[userId] = mid;
       return mid;
     } catch (_) {}
   }
   // Kirim baru kalau belum ada atau gagal edit
   const sent = await bot.sendMessage(chatId, text, { parse_mode: 'HTML', ...opts });
-  await setMsg(userId, sent.message_id);
+  setMsg(userId, sent.message_id);
   return sent.message_id;
 }
 
@@ -665,12 +668,13 @@ bot.on('callback_query', async (query) => {
   // ── menu_2fa ──
   if (data === 'menu_2fa') {
     bot.answerCallbackQuery(query.id).catch(() => {});
-    await setMsg(userId, msgId);
+    setMsg(userId, msgId);
     stopSession(userId);
-    await setState(userId, 'awaiting_2fa');
+    setState(userId, 'awaiting_2fa');
     await sendOrEdit(chatId, userId,
       `${E.lock} <b>Generate 2FA</b>\n\nKirim secret key 2FA kamu.\n\n⊹ Contoh: <code>JBSWY3DPEHPK3PXP</code>`,
-      { reply_markup: { inline_keyboard: [[{ text: '← Back', callback_data: 'back_main' }]] } }
+      { reply_markup: { inline_keyboard: [[{ text: '← Back', callback_data: 'back_main' }]] } },
+      msgId
     );
     return;
   }
@@ -678,7 +682,7 @@ bot.on('callback_query', async (query) => {
   // ── menu_address ──
   if (data === 'menu_address') {
     bot.answerCallbackQuery(query.id).catch(() => {});
-    await setMsg(userId, msgId);
+    setMsg(userId, msgId);
     await sendOrEdit(chatId, userId,
       `${E.pin} <b>Random Address</b>\n\nPilih jumlah alamat.`,
       {
@@ -699,7 +703,8 @@ bot.on('callback_query', async (query) => {
           ],
           [{ text: '← Back', callback_data: 'back_main' }],
         ]},
-      }
+      },
+      msgId
     );
     return;
   }
@@ -709,7 +714,7 @@ bot.on('callback_query', async (query) => {
     const n    = parseInt(data.replace('addr_', ''));
     const last = data; // simpan untuk tombol Generate Baru
     bot.answerCallbackQuery(query.id).catch(() => {});
-    await setMsg(userId, msgId);
+    setMsg(userId, msgId);
 
     const addrs = generateAddresses(n);
     const text  = addrs.map((a, i) => formatAddress(a, i + 1)).join('\n\n');
@@ -719,19 +724,20 @@ bot.on('callback_query', async (query) => {
         { text: '← Back',         callback_data: 'menu_address' },
         { text: '↺ Generate Baru', callback_data: last },
       ]]},
-    });
+    }, msgId);
     return;
   }
 
   // ── back_main ──
   if (data === 'back_main') {
     bot.answerCallbackQuery(query.id).catch(() => {});
-    await setMsg(userId, msgId);
+    setMsg(userId, msgId);
     stopSession(userId);
-    await clearState(userId);
+    clearState(userId);
     await sendOrEdit(chatId, userId,
       `${E.wave} Halo, <b>${name}</b>!\n\n${E.star} Pilih fitur di bawah.`,
-      { reply_markup: mainMenu }
+      { reply_markup: mainMenu },
+      msgId
     );
     return;
   }
@@ -740,10 +746,11 @@ bot.on('callback_query', async (query) => {
   if (data === 'otp_back') {
     bot.answerCallbackQuery(query.id).catch(() => {});
     stopSession(userId);
-    await setMsg(userId, msgId);
+    setMsg(userId, msgId);
     await sendOrEdit(chatId, userId,
       `${E.wave} Halo, <b>${name}</b>!\n\n${E.star} Pilih fitur di bawah.`,
-      { reply_markup: mainMenu }
+      { reply_markup: mainMenu },
+      msgId
     );
     return;
   }
@@ -762,7 +769,7 @@ bot.on('callback_query', async (query) => {
     }
 
     bot.answerCallbackQuery(query.id, { text: 'Refreshed!' }).catch(() => {});
-    await setMsg(userId, msgId);
+    setMsg(userId, msgId);
     await startOtpSession(userId, chatId, base32);
     return;
   }
@@ -770,12 +777,13 @@ bot.on('callback_query', async (query) => {
   // ── menu_ip ──
   if (data === 'menu_ip') {
     bot.answerCallbackQuery(query.id).catch(() => {});
-    await setMsg(userId, msgId);
+    setMsg(userId, msgId);
+    setState(userId, 'awaiting_ip');
     await sendOrEdit(chatId, userId,
       `${E.globe} <b>Cek IP / ISP</b>\n\nKirim IP atau domain.\n\n⊹ <code>178.128.98.106</code>\n⊹ <code>google.com</code>`,
-      { reply_markup: { inline_keyboard: [[{ text: '← Back', callback_data: 'back_main' }]] } }
+      { reply_markup: { inline_keyboard: [[{ text: '← Back', callback_data: 'back_main' }]] } },
+      msgId
     );
-    await setState(userId, 'awaiting_ip');
     return;
   }
 
