@@ -218,42 +218,6 @@ function timerBar(secs) {
   return '█'.repeat(filled) + '░'.repeat(empty) + `  ${secs}s`;
 }
 
-// Cek join channel — di-cache di Redis 5 menit supaya tidak getChatMember
-// di setiap pesan (sumber utama latency). memJoin = fallback in-memory.
-const JOIN_TTL = 5 * 60; // 5 menit
-const memJoin  = new Map(); // userId → { ok, exp }
-
-async function hasJoined(userId) {
-  // 1) cek cache
-  if (redis) {
-    try {
-      const c = await redis.get(`join:${userId}`);
-      if (c === '1') return true;
-      if (c === '0') return false;
-    } catch {}
-  } else {
-    const c = memJoin.get(userId);
-    if (c && c.exp > Date.now()) return c.ok;
-  }
-
-  // 2) cache miss → tanya Telegram
-  let ok = true;
-  try {
-    const m = await bot.getChatMember(CHANNEL, userId);
-    ok = !(m.status === 'kicked' || m.status === 'left');
-  } catch {
-    ok = true; // kalau error (mis. bot bukan admin), jangan blokir user
-  }
-
-  // 3) simpan ke cache
-  if (redis) {
-    try { await redis.set(`join:${userId}`, ok ? '1' : '0', 'EX', JOIN_TTL); } catch {}
-  } else {
-    memJoin.set(userId, { ok, exp: Date.now() + JOIN_TTL * 1000 });
-  }
-  return ok;
-}
-
 // ─────────────────────────────────────────
 //   SESSIONS
 // ─────────────────────────────────────────
@@ -305,14 +269,6 @@ async function clearState(userId) {
   delete memState[userId];
   if (redis) {
     try { await redis.del(`state:${userId}`); } catch {}
-  }
-}
-
-// Hapus cache status join (dipakai saat user klik "Sudah Join")
-async function clearJoinCache(userId) {
-  memJoin.delete(userId);
-  if (redis) {
-    try { await redis.del(`join:${userId}`); } catch {}
   }
 }
 
@@ -383,16 +339,6 @@ const mainMenu = {
   ],[
     { text: '🌐 Cek IP / ISP',    callback_data: 'menu_ip'      },
   ]],
-};
-
-const joinOpts = {
-  parse_mode: 'HTML',
-  reply_markup: {
-    inline_keyboard: [[
-      { text: '📢 Join Channel', url: 'https://t.me/RayzellStores' },
-      { text: '✓ Sudah Join',   callback_data: 'check_join' },
-    ]],
-  },
 };
 
 // ─────────────────────────────────────────
@@ -553,18 +499,8 @@ bot.onText(/\/start/, async (msg) => {
   const chatId = msg.chat.id;
   const userId = msg.from.id;
   const name   = msg.from.first_name || 'Pengguna';
-  const joined = await hasJoined(userId);
 
   stopSession(userId);
-
-  if (!joined) {
-    const sent = await bot.sendMessage(chatId,
-      `${E.channel} <b>Gabung dulu yuk!</b>\n\nKamu harus join channel kami sebelum pakai bot ini.`,
-      joinOpts
-    );
-    await setMsg(userId, sent.message_id);
-    return;
-  }
 
   await sendOrEdit(chatId, userId,
     `${E.wave} Halo, <b>${name}</b>!\n\n${E.star} Pilih fitur di bawah.`,
@@ -653,24 +589,6 @@ bot.on('callback_query', async (query) => {
   const msgId  = query.message.message_id;
   const name   = query.from.first_name || 'Pengguna';
   const data   = query.data || '';
-
-  // ── check_join ──
-  if (data === 'check_join') {
-    await clearJoinCache(userId); // pastikan cek fresh, bukan dari cache
-    const joined = await hasJoined(userId);
-    if (!joined) {
-      return bot.answerCallbackQuery(query.id, {
-        text: 'Kamu belum join. Silakan join channel dulu.', show_alert: true,
-      });
-    }
-    await bot.answerCallbackQuery(query.id, { text: 'Berhasil! Selamat datang.' });
-    await setMsg(userId, msgId);
-    await sendOrEdit(chatId, userId,
-      `${E.wave} Halo, <b>${name}</b>!\n\n${E.star} Pilih fitur di bawah.`,
-      { reply_markup: mainMenu }
-    );
-    return;
-  }
 
   // ── menu_2fa ──
   if (data === 'menu_2fa') {
@@ -802,13 +720,6 @@ bot.on('message', async (msg) => {
   const chatId = msg.chat.id;
   const userId = msg.from.id;
   const text   = msg.text.trim();
-
-  if (!(await hasJoined(userId))) {
-    return bot.sendMessage(chatId,
-      `${E.channel} <b>Gabung dulu yuk!</b>\n\nKamu harus join channel kami sebelum pakai bot ini.`,
-      joinOpts
-    );
-  }
 
   // Hapus pesan user biar chat tetap rapi
   try { await bot.deleteMessage(chatId, msg.message_id); } catch (_) {}
