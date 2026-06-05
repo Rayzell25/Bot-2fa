@@ -79,13 +79,13 @@ fi
 echo "▶ 4/6  Konfigurasi .env (BOT_API_ROOT + REDIS_URL) ..."
 if [[ -f "$ENV_FILE" ]]; then
   set_env REDIS_URL    "redis://127.0.0.1:6379" "$ENV_FILE"
-  set_env BOT_API_ROOT "http://localhost:8081"  "$ENV_FILE"
+  set_env BOT_API_ROOT "http://127.0.0.1:8081"  "$ENV_FILE"
   echo "  ✓ .env diperbarui: $ENV_FILE"
   grep -E '^(REDIS_URL|BOT_API_ROOT)=' "$ENV_FILE" | sed 's/^/     /'
 else
   echo "  ⚠ $ENV_FILE tidak ada. Tambahkan manual:"
   echo "     REDIS_URL=redis://127.0.0.1:6379"
-  echo "     BOT_API_ROOT=http://localhost:8081"
+  echo "     BOT_API_ROOT=http://127.0.0.1:8081"
 fi
 
 echo "▶ 5/6  Migrasi bot ke Local Bot API (logout dari cloud) ..."
@@ -102,14 +102,14 @@ if [[ -z "${BOT_TOKEN:-}" ]]; then
   echo "      curl -s \"https://api.telegram.org/bot<TOKEN>/logOut\""
 else
   # Cek apakah local server sudah melayani bot ini
-  LOCAL_ME="$(curl -s "http://localhost:8081/bot${BOT_TOKEN}/getMe" 2>/dev/null || true)"
+  LOCAL_ME="$(curl -s "http://127.0.0.1:8081/bot${BOT_TOKEN}/getMe" 2>/dev/null || true)"
   if echo "$LOCAL_ME" | grep -q '"ok":true'; then
     echo "  ✓ Local Bot API sudah melayani bot (getMe ok)"
   else
     echo "  • Logout dari cloud (api.telegram.org) dulu ..."
     curl -s "https://api.telegram.org/bot${BOT_TOKEN}/logOut" >/dev/null 2>&1 || true
     sleep 3
-    LOCAL_ME="$(curl -s "http://localhost:8081/bot${BOT_TOKEN}/getMe" 2>/dev/null || true)"
+    LOCAL_ME="$(curl -s "http://127.0.0.1:8081/bot${BOT_TOKEN}/getMe" 2>/dev/null || true)"
     if echo "$LOCAL_ME" | grep -q '"ok":true'; then
       echo "  ✓ Berhasil migrasi ke Local Bot API (getMe ok)"
     else
@@ -126,7 +126,7 @@ echo "▶ 6/6  Selesai. .env sudah di-set otomatis:"
 cat <<EOF
 
   REDIS_URL=redis://127.0.0.1:6379
-  BOT_API_ROOT=http://localhost:8081
+  BOT_API_ROOT=http://127.0.0.1:8081
 
 Tinggal restart bot:
   cd ~/Bot-2fa && npm install && pm2 restart 2fa-bot

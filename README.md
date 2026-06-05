@@ -244,14 +244,14 @@ Saat pindah dari `api.telegram.org` ke server lokal, bot **harus logout dari clo
 curl -s "https://api.telegram.org/bot<TOKEN>/logOut"
 
 # verifikasi local server sudah melayani bot (harus balas "ok":true)
-curl -s "http://localhost:8081/bot<TOKEN>/getMe"
+curl -s "http://127.0.0.1:8081/bot<TOKEN>/getMe"
 ```
 > Setelah logout, kamu **tidak bisa balik** ke `api.telegram.org` selama ~10 menit (batasan Telegram). Script `setup-vps.sh` melakukan langkah ini otomatis (step 4/5) kalau `BOT_TOKEN` ada di `.env`.
 
 ### D. Tambahkan ke `.env` bot kamu
 ```env
 REDIS_URL=redis://127.0.0.1:6379
-BOT_API_ROOT=http://localhost:8081
+BOT_API_ROOT=http://127.0.0.1:8081
 ```
 
 ### E. Restart bot
@@ -264,7 +264,7 @@ pm2 logs 2fa-bot --lines 20
 
 ✅ Kalau berhasil, log akan menampilkan:
 ```
-  Bot API       : http://localhost:8081
+  Bot API       : http://127.0.0.1:8081
   Redis         : connected → redis://127.0.0.1:6379
 ```
 

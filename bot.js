@@ -18,9 +18,15 @@ const CHANNEL      = process.env.CHANNEL       || '@RayzellStores';
 // ─────────────────────────────────────────
 //   LOCAL BOT API (eliminasi latency)
 // ─────────────────────────────────────────
-// Isi BOT_API_ROOT dengan URL Local Bot API kamu, mis. http://localhost:8081
+// Isi BOT_API_ROOT dengan URL Local Bot API kamu, mis. http://127.0.0.1:8081
 // Kosongkan untuk pakai server resmi https://api.telegram.org
-const BOT_API_ROOT = process.env.BOT_API_ROOT || '';
+let BOT_API_ROOT = process.env.BOT_API_ROOT || '';
+// 'localhost' sering di-resolve ke IPv6 (::1), sedangkan container Local Bot API
+// hanya listen di IPv4 127.0.0.1 → koneksi ditolak → "EFATAL: AggregateError"
+// saat polling. Paksa ke 127.0.0.1 supaya tidak gagal connect.
+if (/^https?:\/\/localhost(:|\/|$)/i.test(BOT_API_ROOT)) {
+  BOT_API_ROOT = BOT_API_ROOT.replace('//localhost', '//127.0.0.1');
+}
 console.log('  Bot API       :', BOT_API_ROOT || 'https://api.telegram.org (resmi)');
 
 // ─────────────────────────────────────────
@@ -553,7 +559,7 @@ bot.onText(/^\/ping(?:@\w+)?\b/, async (msg) => {
     `⊹ Redis   : <code>${redis ? 'aktif' : 'mati (in-memory)'}</code>\n` +
     `⊹ getMe   : <code>${ms} ms</code>\n\n` +
     `${verdict}` +
-    (!usingLocal ? `\n\n<i>Set <code>BOT_API_ROOT=http://localhost:8081</code> di .env lalu restart untuk respon instan.</i>` : ''),
+    (!usingLocal ? `\n\n<i>Set <code>BOT_API_ROOT=http://127.0.0.1:8081</code> di .env lalu restart untuk respon instan.</i>` : ''),
     { parse_mode: 'HTML' }
   );
 });
